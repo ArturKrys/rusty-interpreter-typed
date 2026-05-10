@@ -1,0 +1,358 @@
+options {
+	STATIC = false;
+}
+
+PARSER_BEGIN(Parser)
+package parser;
+
+import java.util.List;
+import java.util.ArrayList;
+
+import ast.bindings.ASTLet;
+import ast.control.ASTIf;
+import ast.control.ASTSeq;
+//import ast.control.ASTWhile;
+import ast.functions.ASTApp;
+import ast.functions.ASTFun;
+import ast.io.ASTPrint;
+import ast.io.ASTPrintln;
+import ast.literals.ASTBool;
+import ast.literals.ASTId;
+import ast.literals.ASTInt;
+//import ast.literals.ASTString;
+//import ast.literals.ASTNone;
+import ast.memory.ASTAssign;
+//import ast.memory.ASTCell;
+//import ast.memory.ASTDeref;
+import ast.operators.ASTAnd;
+import ast.operators.ASTDif;
+import ast.operators.ASTDiv;
+import ast.operators.ASTEq;
+import ast.operators.ASTGt;
+import ast.operators.ASTGteq;
+import ast.operators.ASTLt;
+import ast.operators.ASTLteq;
+import ast.operators.ASTMult;
+import ast.operators.ASTNeg;
+import ast.operators.ASTNot;
+import ast.operators.ASTOr;
+import ast.operators.ASTPlus;
+import ast.operators.ASTSub;
+//import ast.structs.ASTMatch;
+//import ast.structs.ASTStructTuple;
+import ast.ASTNode;
+import interpreter.environment.Bind;
+
+public class Parser {
+	/* nothing */
+}
+
+PARSER_END(Parser)
+
+
+/* ─── SKIP ───────────────────────────────────────────────────────────────── */
+
+SKIP:
+{
+	  " "
+	| "\t"
+	| "\r"
+	| "\n"
+	| < "//" (~["\r", "\n"])* >
+	| < "/*" > : ML_COM_NEXT
+}
+
+<ML_COM_NEXT> SKIP:
+{
+	< "*/" > : DEFAULT
+	| < ~[] >
+}
+
+
+/* ─── TOKENS ─────────────────────────────────────────────────────────────── */
+
+TOKEN:
+{
+	// Keywords
+	  < LET:     "let"     >
+	| < TRUE:    "true"     >
+	| < FALSE:   "false"    >
+	| < IF:      "if"       >
+	| < ELSE:    "else"     >
+	| < WHILE:   "while"    >
+	| < CELL:    "cell"     >
+	| < FN:      "fn"       >
+	| < PRINT:   "print!"   >
+	| < PRINTLN: "println!"  >
+
+	// Arithmetic operators
+	| < PLUS:     "+" >
+	| < MINUS:    "-" >
+	| < MULTIPLY: "*" >
+	| < DIVIDE:   "/" >
+
+	// Comparison operators
+	| < EQUAL_TO:        "==" >
+	| < NOT_EQUAL_TO:    "~=" >
+	| < GREATER_THAN:    ">"  >
+	| < LESS_THAN:       "<"  >
+	| < GREATER_THAN_EQ: ">=" >
+	| < LESS_THAN_EQ:    "<=" >
+
+	// Logical operators
+	| < AND: "&&" >
+	| < OR:  "||" >
+	| < NOT: "~"  >
+
+	// Delimiters & punctuation
+	| < LEFT_PAREN:       "("  >
+	| < RIGHT_PAREN:      ")"  >
+	| < LEFT_BRACE:       "{"  >
+	| < RIGHT_BRACE:      "}"  >
+	| < BIND:             "="  >
+	| < ASSIGN:           ":=" >
+	| < ARROW:            "=>" >
+	| < COLON:            ":"  >
+	| < SEMICOLON:        ";"  >
+	| < DOUBLE_SEMICOLON: ";;" >
+	| < COMMA:            ","  >
+	| < PIPE:             "|"  >
+
+	// Literals
+	| < STRING_LITERAL:  "\"" ( (~["\"","\\"]) | ("\\" ( ["n","t","b","r","f","\\","\""] ) ) )* "\"" >
+	| < IDENTIFIER:      ["a"-"z","A"-"Z"] ( ["a"-"z","A"-"Z","0"-"9"] )*                            >
+	| < INTEGER_LITERAL: (["0"-"9"])+                                                                >
+}
+
+
+/* ─── GRAMMAR ─────────────────────────────────────────────────────────────── */
+
+/* Start ::= EOF  |  LetBinding ;; */
+/* Start */
+ASTNode ParseProgram():
+{
+	ASTNode result;
+}
+{
+	<EOF>                                           { return null;   }
+	| result = ParseLetBinding() <DOUBLE_SEMICOLON> { return result; }
+}
+
+/* LetBinding ::= Sequence
+               | (let id = LogicalOr ;)+  Sequence */
+/* Let */
+ASTNode ParseLetBinding():
+{
+	Token boundName;
+	ASTNode result, initExpr, bodyExpr;
+	List<Bind> declarations = new ArrayList<Bind>();
+}
+{
+	(
+		result = ParseSequence()
+		|
+		(
+			(
+				<LET> boundName = <IDENTIFIER> <BIND> initExpr = ParseLogicalOr() <SEMICOLON>
+				{ declarations.add(new Bind(boundName.image, initExpr)); }
+			)+ /* + -> 1 or more */
+			bodyExpr = ParseSequence()
+			{ result = new ASTLet(declarations, bodyExpr); }
+		)
+	)
+	{ return result; }
+}
+
+/* Sequence ::= AssignmentExpr  (; AssignmentExpr)* */
+/* Seq */
+ASTNode ParseSequence():
+{
+	Token seqSep;
+	ASTNode left, right;
+}
+{
+	left = ParseAssignmentExpression()
+	(
+		seqSep = <SEMICOLON> right = ParseAssignmentExpression() {
+			left = new ASTSeq(left, right);
+		}
+	)*
+	{ return left; }
+}
+
+/* AssignmentExpr ::= LogicalOr  (:= LogicalOr)* */
+/* SeqExp */
+ASTNode ParseAssignmentExpression():
+{
+	Token assignOp;
+	ASTNode left, right;
+}
+{
+	left = ParseLogicalOr()
+	(
+		assignOp = <ASSIGN> right = ParseLogicalOr() {
+			left = new ASTAssign(left, right);
+		}
+	)*
+	{ return left; }
+}
+
+/* LogicalOr ::= LogicalAnd  (|| LogicalAnd)* */
+/* BA */
+ASTNode ParseLogicalOr():
+{
+	Token logicalOp;
+	ASTNode left, right;
+}
+{
+	left = ParseLogicalAnd()
+	(
+		logicalOp = <OR> right = ParseLogicalAnd()
+		{ left = new ASTOr(left, right); }
+	)*
+	{ return left; }
+}
+
+/* LogicalAnd ::= Comparison  (&& Comparison)* */
+/* BM */
+ASTNode ParseLogicalAnd():
+{
+	Token logicalOp;
+	ASTNode left, right;
+}
+{
+	left = ParseComparison()
+	(
+		logicalOp = <AND> right = ParseComparison()
+		{ left = new ASTAnd(left, right); }
+	)*
+	{ return left; }
+}
+
+/* Comparison ::= Additive  (( == | ~= | > | < | >= | <= ) Additive)? */
+/* Rel */
+ASTNode ParseComparison():
+{
+	ASTNode left, right;
+}
+{
+	left = ParseAdditive()
+	(
+		  <EQUAL_TO>        right = ParseAdditive() { left = new ASTEq(left, right);   }
+		| <GREATER_THAN>    right = ParseAdditive() { left = new ASTGt(left, right);   }
+		| <LESS_THAN>       right = ParseAdditive() { left = new ASTLt(left, right);   }
+		| <GREATER_THAN_EQ> right = ParseAdditive() { left = new ASTGteq(left, right); }
+		| <LESS_THAN_EQ>    right = ParseAdditive() { left = new ASTLteq(left, right); }
+		| <NOT_EQUAL_TO>    right = ParseAdditive() { left = new ASTDif(left, right);  }
+	)? /* ? -> zero or one */
+	{ return left; }
+}
+
+/* Additive ::= MultiplicativeOrCall  ((+ | -) MultiplicativeOrCall)* */
+/* Exp */
+ASTNode ParseAdditive():
+{
+	Token addOp;
+	ASTNode left, right;
+}
+{
+	left = ParseMultiplicativeOrCall()
+	(
+		addOp = <PLUS>  right = ParseMultiplicativeOrCall() { left = new ASTPlus(left, right); }
+		|
+		addOp = <MINUS> right = ParseMultiplicativeOrCall() { left = new ASTSub(left, right);  }
+	)*
+	{ return left; }
+}
+
+/* MultiplicativeOrCall ::= Primary  ((* | / | ( args )) Primary)* */
+/* Term */
+ASTNode ParseMultiplicativeOrCall():
+{
+	Token mulOp;      // captures * or /
+	Token callParen;  // captures ( at a function call site
+	ASTNode left, right;
+}
+{
+	left = ParsePrimary()
+	(
+		mulOp = <MULTIPLY> right = ParsePrimary() { left = new ASTMult(left, right); }
+		|
+		mulOp = <DIVIDE>   right = ParsePrimary() { left = new ASTDiv(left, right);  }
+		|
+		/* Function application: f(arg)  or  f(arg1, arg2, ...) */
+		callParen = <LEFT_PAREN>
+		(
+			right = ParseLetBinding()
+			(
+				( <RIGHT_PAREN> { left = new ASTApp(left, right); } )
+				|
+				(
+					( <COMMA> { left = new ASTApp(left, right); } right = ParseLetBinding() )+
+					<RIGHT_PAREN> { left = new ASTApp(left, right); }
+				)
+			)
+		)
+	)*
+	{ return left; }
+}
+
+/* FunctionLiteral ::= | id (, id)* |  Primary */
+/* Function */
+ASTNode ParseFunctionLiteral():
+{
+	Token paramName;
+	ASTNode result, currentFun, bodyExpr;
+}
+{
+	<PIPE> paramName = <IDENTIFIER> {
+		result = new ASTFun(paramName.image, null);
+		currentFun = result;
+	}
+	(
+		<COMMA> paramName = <IDENTIFIER> {
+			bodyExpr = new ASTFun(paramName.image, null);
+			((ASTFun) currentFun).setBody(bodyExpr);
+			currentFun = bodyExpr;
+		}
+	)*
+	<PIPE> bodyExpr = ParsePrimary() {
+		((ASTFun) currentFun).setBody(bodyExpr);
+		return result;
+	}
+}
+
+/* Primary ::= num | true | false | id
+             | - Primary | ~ Primary
+             | FunctionLiteral
+             | if LogicalOr { LetBinding } else { LetBinding }
+             | print Primary | println Primary
+             | ( LetBinding )
+             | { LetBinding } */
+/* Fact */
+ASTNode ParsePrimary():
+{
+	Token literalToken;
+	ASTNode result, thenBranch, elseBranch;
+}
+{
+	(
+		  literalToken = <INTEGER_LITERAL> { result = new ASTInt(Integer.parseInt(literalToken.image)); }
+		| literalToken = <TRUE>            { result = new ASTBool(true);                                }
+		| literalToken = <FALSE>           { result = new ASTBool(false);                               }
+		| literalToken = <IDENTIFIER>      { result = new ASTId(literalToken.image);                    }
+		| <MINUS> result = ParsePrimary()  { result = new ASTNeg(result);                               }
+		| <NOT>   result = ParsePrimary()  { result = new ASTNot(result);                               }
+		| result = ParseFunctionLiteral()
+		| <IF> result = ParseLogicalOr()
+		  <LEFT_BRACE>  thenBranch = ParseLetBinding() <RIGHT_BRACE>
+		  <ELSE>
+		  <LEFT_BRACE>  elseBranch = ParseLetBinding() <RIGHT_BRACE>
+		  { result = new ASTIf(result, thenBranch, elseBranch); }
+		| <PRINT>   result = ParsePrimary() { result = new ASTPrint(result);   }
+		| <PRINTLN> result = ParsePrimary() { result = new ASTPrintln(result); }
+		| <LEFT_PAREN> result = ParseLetBinding() <RIGHT_PAREN>
+		| <LEFT_BRACE> result = ParseLetBinding() <RIGHT_BRACE>
+	)
+	{ return result; }
+}
