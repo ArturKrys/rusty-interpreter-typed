@@ -169,15 +169,33 @@ public class EvalVisitor implements Visitor {
 	// Memory
 	// ----------------------------------------------------
 	public IValue visitAssign(ASTAssign node) throws InterpreterError {
-		return null;
+		IValue target = node.getTarget().accept(this);
+
+		if (target instanceof VCell) {
+			int location = ((VCell) target).getLocation();
+			IValue newValue = node.getValue().accept(this);
+			store.set(location, newValue);
+			return newValue;
+		}
+
+		throw new InterpreterError("assign: cell expected, found: " + target);
 	}
 
 	public IValue visitCell(ASTCell node) throws InterpreterError {
-		return null;
+		IValue initialValue = node.getInitialValue().accept(this);
+		int location = store.alloc(initialValue);
+		return new VCell(location);
 	}
 
 	public IValue visitDeref(ASTDeref node) throws InterpreterError {
-		return null;
+		IValue reference = node.getReference().accept(this);
+
+		if (reference instanceof VCell) {
+			int location = ((VCell) reference).getLocation();
+			return store.get(location);
+		}
+
+		throw new InterpreterError("deref: cell expected, found: " + reference);
 	}
 
 	// ----------------------------------------------------
