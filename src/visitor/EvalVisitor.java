@@ -100,7 +100,25 @@ public class EvalVisitor implements Visitor {
 	}
 
 	public IValue visitWhile(ASTWhile node) throws InterpreterError {
-		return null;
+		IValue evaluatedCondition = node.getCondition().accept(this);
+
+		if (!(evaluatedCondition instanceof VBool)) {
+			throw new InterpreterError(
+					"while: boolean expected, found: " + evaluatedCondition);
+		}
+
+		while (((VBool) evaluatedCondition).getval()) {
+			node.getBody().accept(this);
+
+			evaluatedCondition = node.getCondition().accept(this);
+
+			if (!(evaluatedCondition instanceof VBool)) {
+				throw new InterpreterError(
+						"while: boolean expected, found: " + evaluatedCondition);
+			}
+		}
+
+		return new VUnit();
 	}
 
 	public IValue visitSeq(ASTSeq node) throws InterpreterError {
