@@ -4,28 +4,34 @@ import java.util.ArrayList;
 import java.util.List;
 
 import interpreter.errors.InterpreterError;
-import interpreter.values.IValue;
 
-public class Store {
-	private final List<IValue> heap = new ArrayList<>();
+public final class Store<E> {
+	private final List<E> heap;
 
-	public int alloc(IValue value) {
+	public Store() {
+		heap = new ArrayList<>();
+	}
+
+	public int alloc(E value) {
 		int address = heap.size();
 		heap.add(value);
 		return address;
 	}
 
-	public IValue get(int address) throws InterpreterError {
-		if (address < 0 || address >= heap.size()) {
-			throw new InterpreterError("store: address out of bounds: " + address);
-		}
+	public E get(int address) throws InterpreterError {
+		checkAddress(address);
 		return heap.get(address);
 	}
 
-	public void set(int address, IValue value) throws InterpreterError {
-		if (address < 0 || address >= heap.size()) {
-			throw new InterpreterError("store: address out of bounds: " + address);
-		}
+	public void set(int address, E value) throws InterpreterError {
+		checkAddress(address);
 		heap.set(address, value);
+	}
+
+	private void checkAddress(int address) throws InterpreterError {
+		if (address < 0 || address >= heap.size()) {
+			throw new InterpreterError(
+					"store: address out of bounds: " + address);
+		}
 	}
 }

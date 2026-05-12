@@ -22,7 +22,7 @@ public class R0int {
 				exp = parser.ParseProgram();
 				if (exp == null)
 					System.exit(0);
-				EvalVisitor eval = new EvalVisitor(new Environment<>(), new Store());
+				EvalVisitor eval = new EvalVisitor(new Environment<>(), new Store<>());
 				IValue result = exp.accept(eval);
 				System.out.println(result.toStr());
 			} catch (ParseException e) {

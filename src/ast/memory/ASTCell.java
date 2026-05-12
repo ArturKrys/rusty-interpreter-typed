@@ -6,7 +6,7 @@ import interpreter.values.IValue;
 import visitor.Visitor;
 
 public class ASTCell implements ASTNode {
-	private ASTNode initialValue;
+	private final ASTNode initialValue;
 
 	public ASTCell(ASTNode initialValue) {
 		this.initialValue = initialValue;

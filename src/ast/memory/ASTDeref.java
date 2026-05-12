@@ -6,7 +6,7 @@ import interpreter.values.IValue;
 import visitor.Visitor;
 
 public class ASTDeref implements ASTNode {
-	private ASTNode reference;
+	private final ASTNode reference;
 
 	public ASTDeref(ASTNode reference) {
 		this.reference = reference;

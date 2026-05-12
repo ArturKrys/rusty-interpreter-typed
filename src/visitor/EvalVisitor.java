@@ -52,9 +52,9 @@ import interpreter.values.VUnit;
 
 public class EvalVisitor implements Visitor {
 	private Environment<IValue> environment;
-	private Store store;
+	private Store<IValue> store;
 
-	public EvalVisitor(Environment<IValue> environment, Store store) {
+	public EvalVisitor(Environment<IValue> environment, Store<IValue> store) {
 		this.environment = environment;
 		this.store = store;
 	}
