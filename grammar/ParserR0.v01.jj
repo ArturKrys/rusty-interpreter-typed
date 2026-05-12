@@ -8,10 +8,11 @@ package parser;
 import java.util.List;
 import java.util.ArrayList;
 
+import ast.ASTNode;
 import ast.bindings.ASTLet;
 import ast.control.ASTIf;
 import ast.control.ASTSeq;
-//import ast.control.ASTWhile;
+import ast.control.ASTWhile;
 import ast.functions.ASTApp;
 import ast.functions.ASTFun;
 import ast.io.ASTPrint;
@@ -19,11 +20,11 @@ import ast.io.ASTPrintln;
 import ast.literals.ASTBool;
 import ast.literals.ASTId;
 import ast.literals.ASTInt;
-//import ast.literals.ASTString;
-//import ast.literals.ASTNone;
+import ast.literals.ASTString;
+import ast.literals.ASTUnit;
 import ast.memory.ASTAssign;
-//import ast.memory.ASTCell;
-//import ast.memory.ASTDeref;
+import ast.memory.ASTCell;
+import ast.memory.ASTDeref;
 import ast.operators.ASTAnd;
 import ast.operators.ASTDif;
 import ast.operators.ASTDiv;
@@ -38,9 +39,9 @@ import ast.operators.ASTNot;
 import ast.operators.ASTOr;
 import ast.operators.ASTPlus;
 import ast.operators.ASTSub;
-//import ast.structs.ASTMatch;
-//import ast.structs.ASTStructTuple;
-import ast.ASTNode;
+import ast.structs.ASTMatch;
+import ast.structs.ASTStructPattern;
+import ast.structs.ASTStructTuple;
 import interpreter.environment.Bind;
 
 public class Parser {
@@ -64,7 +65,7 @@ SKIP:
 
 <ML_COM_NEXT> SKIP:
 {
-	< "*/" > : DEFAULT
+	  < "*/" > : DEFAULT
 	| < ~[] >
 }
 
@@ -74,16 +75,17 @@ SKIP:
 TOKEN:
 {
 	// Keywords
-	  < LET:     "let"     >
+	  < LET:     "let"      >
 	| < TRUE:    "true"     >
 	| < FALSE:   "false"    >
 	| < IF:      "if"       >
 	| < ELSE:    "else"     >
 	| < WHILE:   "while"    >
+	| < MATCH:   "match"    >
 	| < CELL:    "cell"     >
 	| < FN:      "fn"       >
 	| < PRINT:   "print!"   >
-	| < PRINTLN: "println!"  >
+	| < PRINTLN: "println!" >
 
 	// Arithmetic operators
 	| < PLUS:     "+" >
@@ -99,10 +101,13 @@ TOKEN:
 	| < GREATER_THAN_EQ: ">=" >
 	| < LESS_THAN_EQ:    "<=" >
 
-	// Logical operators
+	// Logical / unary operators
 	| < AND: "&&" >
 	| < OR:  "||" >
 	| < NOT: "~"  >
+
+	// Memory operators
+	| < DEREF:  "!" >
 
 	// Delimiters & punctuation
 	| < LEFT_PAREN:       "("  >
@@ -116,32 +121,46 @@ TOKEN:
 	| < SEMICOLON:        ";"  >
 	| < DOUBLE_SEMICOLON: ";;" >
 	| < COMMA:            ","  >
-	| < PIPE:             "|"  >
+	| < BAR:              "|"  >
 
-	// Literals
-	| < STRING_LITERAL:  "\"" ( (~["\"","\\"]) | ("\\" ( ["n","t","b","r","f","\\","\""] ) ) )* "\"" >
-	| < IDENTIFIER:      ["a"-"z","A"-"Z"] ( ["a"-"z","A"-"Z","0"-"9"] )*                            >
-	| < INTEGER_LITERAL: (["0"-"9"])+                                                                >
+	// Compound / structured literals
+	| < UNIT:            "()"                                                               >
+	| < TAG:             "#" ["a"-"z","A"-"Z"] ( ["a"-"z","A"-"Z","0"-"9"] )*               >
+	| < STRING_LITERAL:  "\"" ( ~["\"","\\"] | "\\" ["n","t","b","r","f","\\","\""] )* "\"" >
+	| < IDENTIFIER:      ["a"-"z","A"-"Z"] ( ["a"-"z","A"-"Z","0"-"9"] )*                   >
+	| < INTEGER_LITERAL: ( ["0"-"9"] )+                                                     >
 }
 
 
 /* ─── GRAMMAR ─────────────────────────────────────────────────────────────── */
 
-/* Start ::= EOF  |  LetBinding ;; */
-/* Start */
-ASTNode ParseProgram():
+/*
+ * Precedence / call chain (high → low):
+ *
+ *   ParsePrimary
+ *     ↑ ParseMultiplicativeOrCall      (* / and function application)
+ *       ↑ ParseAdditive                (+ -)
+ *         ↑ ParseComparison            (== ~= > < >= <=)
+ *           ↑ ParseLogicalAnd          (&&)
+ *             ↑ ParseLogicalOr         (||)
+ *               ↑ ParseAssignmentExpr  (:=)
+ *                 ↑ ParseSequence      (;)
+ *                   ↑ ParseLetBinding  (let ... in)
+ *                     ↑ ParseProgram
+ */
+
+/* ParseProgram ::= EOF | ParseLetBinding ;; */
+ASTNode ParseProgram(): /* Start */
 {
 	ASTNode result;
 }
 {
-	<EOF>                                           { return null;   }
-	| result = ParseLetBinding() <DOUBLE_SEMICOLON> { return result; }
+	  <EOF>                                          { return null;   }
+	| result = ParseLetBinding() <DOUBLE_SEMICOLON>  { return result; }
 }
 
-/* LetBinding ::= Sequence
-               | (let id = LogicalOr ;)+  Sequence */
-/* Let */
-ASTNode ParseLetBinding():
+/* ParseLetBinding ::= ParseSequence | ( let id = ParseLogicalOr ; )+ ParseSequence */
+ASTNode ParseLetBinding(): /* Let */
 {
 	Token boundName;
 	ASTNode result, initExpr, bodyExpr;
@@ -163,26 +182,23 @@ ASTNode ParseLetBinding():
 	{ return result; }
 }
 
-/* Sequence ::= AssignmentExpr  (; AssignmentExpr)* */
-/* Seq */
-ASTNode ParseSequence():
+/* ParseSequence ::= ParseAssignmentExpr ( ; ParseAssignmentExpr )* */
+ASTNode ParseSequence(): /* Seq */
 {
 	Token seqSep;
 	ASTNode left, right;
 }
 {
-	left = ParseAssignmentExpression()
+	left = ParseAssignmentExpr()
 	(
-		seqSep = <SEMICOLON> right = ParseAssignmentExpression() {
-			left = new ASTSeq(left, right);
-		}
+		seqSep = <SEMICOLON> right = ParseAssignmentExpr()
+		{ left = new ASTSeq(left, right); }
 	)*
 	{ return left; }
 }
 
-/* AssignmentExpr ::= LogicalOr  (:= LogicalOr)* */
-/* SeqExp */
-ASTNode ParseAssignmentExpression():
+/* ParseAssignmentExpr ::= ParseLogicalOr ( := ParseLogicalOr )* */
+ASTNode ParseAssignmentExpr(): /* SeqExp */
 {
 	Token assignOp;
 	ASTNode left, right;
@@ -190,16 +206,14 @@ ASTNode ParseAssignmentExpression():
 {
 	left = ParseLogicalOr()
 	(
-		assignOp = <ASSIGN> right = ParseLogicalOr() {
-			left = new ASTAssign(left, right);
-		}
+		assignOp = <ASSIGN> right = ParseLogicalOr()
+		{ left = new ASTAssign(left, right); }
 	)*
 	{ return left; }
 }
 
-/* LogicalOr ::= LogicalAnd  (|| LogicalAnd)* */
-/* BA */
-ASTNode ParseLogicalOr():
+/* ParseLogicalOr ::= ParseLogicalAnd  ( || ParseLogicalAnd )* */
+ASTNode ParseLogicalOr(): /* BA */
 {
 	Token logicalOp;
 	ASTNode left, right;
@@ -213,9 +227,8 @@ ASTNode ParseLogicalOr():
 	{ return left; }
 }
 
-/* LogicalAnd ::= Comparison  (&& Comparison)* */
-/* BM */
-ASTNode ParseLogicalAnd():
+/* ParseLogicalAnd ::= ParseComparison ( && ParseComparison )* */
+ASTNode ParseLogicalAnd(): /* BM */
 {
 	Token logicalOp;
 	ASTNode left, right;
@@ -229,9 +242,8 @@ ASTNode ParseLogicalAnd():
 	{ return left; }
 }
 
-/* Comparison ::= Additive  (( == | ~= | > | < | >= | <= ) Additive)? */
-/* Rel */
-ASTNode ParseComparison():
+/* ParseComparison ::= ParseAdditive ( ( == | ~= | > | < | >= | <= ) ParseAdditive )? */
+ASTNode ParseComparison(): /* Rel */
 {
 	ASTNode left, right;
 }
@@ -244,13 +256,12 @@ ASTNode ParseComparison():
 		| <GREATER_THAN_EQ> right = ParseAdditive() { left = new ASTGteq(left, right); }
 		| <LESS_THAN_EQ>    right = ParseAdditive() { left = new ASTLteq(left, right); }
 		| <NOT_EQUAL_TO>    right = ParseAdditive() { left = new ASTDif(left, right);  }
-	)? /* ? -> zero or one */
+	)?
 	{ return left; }
 }
 
-/* Additive ::= MultiplicativeOrCall  ((+ | -) MultiplicativeOrCall)* */
-/* Exp */
-ASTNode ParseAdditive():
+/* ParseAdditive ::= ParseMultiplicativeOrCall ( ( + | - ) ParseMultiplicativeOrCall )* */
+ASTNode ParseAdditive(): /* Exp */
 {
 	Token addOp;
 	ASTNode left, right;
@@ -265,9 +276,8 @@ ASTNode ParseAdditive():
 	{ return left; }
 }
 
-/* MultiplicativeOrCall ::= Primary  ((* | / | ( args )) Primary)* */
-/* Term */
-ASTNode ParseMultiplicativeOrCall():
+/* ParseMultiplicativeOrCall ::= ParsePrimary ( ( * | / | ( args ) ) ParsePrimary )* */
+ASTNode ParseMultiplicativeOrCall(): /* Term */
 {
 	Token mulOp;      // captures * or /
 	Token callParen;  // captures ( at a function call site
@@ -280,79 +290,188 @@ ASTNode ParseMultiplicativeOrCall():
 		|
 		mulOp = <DIVIDE>   right = ParsePrimary() { left = new ASTDiv(left, right);  }
 		|
-		/* Function application: f(arg)  or  f(arg1, arg2, ...) */
-		callParen = <LEFT_PAREN>
+		/* Function application: f(arg1, arg2, ...)
+								 f(a, b) -> app(app(f, a), b) */
+		<LEFT_PAREN>
 		(
 			right = ParseLetBinding()
 			(
-				( <RIGHT_PAREN> { left = new ASTApp(left, right); } )
+				<RIGHT_PAREN>
+				{ left = new ASTApp(left, right); }
 				|
 				(
-					( <COMMA> { left = new ASTApp(left, right); } right = ParseLetBinding() )+
-					<RIGHT_PAREN> { left = new ASTApp(left, right); }
-				)
+					<COMMA> { left = new ASTApp(left, right); }
+					right = ParseLetBinding()
+				)+
+				<RIGHT_PAREN>
+				{ left = new ASTApp(left, right); }
 			)
 		)
 	)*
 	{ return left; }
 }
 
-/* FunctionLiteral ::= | id (, id)* |  Primary */
-/* Function */
-ASTNode ParseFunctionLiteral():
+/* ParseFunctionLiteral ::= | id ( , id )* | ParsePrimary */
+ASTNode ParseFunctionLiteral(): /* Function */
 {
-	Token paramName;
-	ASTNode result, currentFun, bodyExpr;
+	Token param;
+	ASTNode result, current = null, body;
 }
 {
-	<PIPE> paramName = <IDENTIFIER> {
-		result = new ASTFun(paramName.image, null);
-		currentFun = result;
-	}
 	(
-		<COMMA> paramName = <IDENTIFIER> {
-			bodyExpr = new ASTFun(paramName.image, null);
-			((ASTFun) currentFun).setBody(bodyExpr);
-			currentFun = bodyExpr;
-		}
-	)*
-	<PIPE> bodyExpr = ParsePrimary() {
-		((ASTFun) currentFun).setBody(bodyExpr);
-		return result;
-	}
+		// Multi-param: |x, y| body -> abs(x, abs(y, body))
+		<BAR>
+			param = <IDENTIFIER>
+			{
+				result = new ASTFun(param.image, null);
+				current = result;
+			}
+			(
+				<COMMA> param = <IDENTIFIER>
+				{
+					body = new ASTFun(param.image, null);
+					((ASTFun) current).setBody(body);
+					current = body;
+				}
+			)*
+		<BAR> body = ParsePrimary()
+			{
+				((ASTFun) current).setBody(body);
+			}
+
+		|
+
+		// No-param shorthand: || body
+		<OR> body=ParsePrimary()
+			{
+				result = new ASTFun("_", body);
+			}
+	)
+	{ return result; }
 }
 
-/* Primary ::= num | true | false | id
-             | - Primary | ~ Primary
-             | FunctionLiteral
-             | if LogicalOr { LetBinding } else { LetBinding }
-             | print Primary | println Primary
-             | ( LetBinding )
-             | { LetBinding } */
-/* Fact */
-ASTNode ParsePrimary():
+/* ParseStructTuple ::= <TAG> ( <LEFT_PAREN> ParseLetBinding ( , ParseLetBinding )* <RIGHT_PAREN>  |  <UNIT> ) */
+ASTNode ParseStructTuple(): /* StructTuple */
 {
-	Token literalToken;
-	ASTNode result, thenBranch, elseBranch;
+	Token tag;
+	ASTNode elem;
+	List<ASTNode> elems = new ArrayList<ASTNode>();
+}
+{
+	tag = <TAG>
+	(
+		// Multi-param: #Color(9,2,3)
+		<LEFT_PAREN>
+			elem = ParseLetBinding() { elems.add(elem); }
+			( <COMMA> elem = ParseLetBinding() { elems.add(elem); } )*
+		<RIGHT_PAREN>
+
+		|
+
+		// No-param shorthand: #Tag()
+		<UNIT>
+        { elems.add(new ASTUnit()); }
+	)
+	{ return new ASTStructTuple(tag.image, elems); }
+}
+
+/* ParseMatchExpr ::=
+		match ParseLetBinding {
+			ParseStructPattern => ParseLetBinding
+			else => ParseLetBinding
+		}
+*/
+ASTNode ParseMatchExpr(): /* Match */
+{
+	ASTNode targetExpr, matchBranch, elseBranch;
+	ASTStructPattern pattern;
+}
+{
+	/* Example: match e { #Color(r,g,b) => r+g+b, else => -1 } */
+	<MATCH> targetExpr = ParseLetBinding()
+	<LEFT_BRACE>
+		pattern = ParseStructPattern()
+		       <ARROW> matchBranch = ParseLetBinding()
+		<ELSE> <ARROW> elseBranch  = ParseLetBinding()
+	<RIGHT_BRACE>
+	{ return new ASTMatch(targetExpr, pattern, matchBranch, elseBranch); }
+}
+
+/* ParseStructPattern ::= <TAG> ( <LEFT_PAREN> id ( , id )* <RIGHT_PAREN>  |  <UNIT> ) */
+ASTStructPattern ParseStructPattern(): /* Pattern */
+{
+	Token tag, param;
+	List<String> params = new ArrayList<String>();
+}
+{
+	tag = <TAG>
+	(
+		<LEFT_PAREN>
+			param = <IDENTIFIER> { params.add(param.image); }
+			( <COMMA> param = <IDENTIFIER> { params.add(param.image); } )*
+		<RIGHT_PAREN>
+		|
+		<UNIT>
+        { params.add("_");}
+	)
+	{ return new ASTStructPattern(tag.image, params); }
+}
+
+/* ParsePrimary ::=
+	   INTEGER_LITERAL | true | false | ()  | STRING_LITERAL | id
+	 | - ParsePrimary | ~ ParsePrimary
+	 | ParseFunctionLiteral
+	 | if ParseLogicalOr { ParseLetBinding } else { ParseLetBinding }
+	 | print!   ParsePrimary
+	 | println! ParsePrimary
+	 | while ParseLogicalOr { ParseLetBinding }
+	 | cell ParsePrimary
+	 | ! ParsePrimary
+	 | ( ParseLetBinding )
+	 | { ParseLetBinding }
+	 | ParseStructTuple
+	 | ParseMatchExpr
+*/
+ASTNode ParsePrimary(): /* Primary */
+{
+	Token tok;
+	ASTNode result, thenBranch, elseBranch, body;
 }
 {
 	(
-		  literalToken = <INTEGER_LITERAL> { result = new ASTInt(Integer.parseInt(literalToken.image)); }
-		| literalToken = <TRUE>            { result = new ASTBool(true);                                }
-		| literalToken = <FALSE>           { result = new ASTBool(false);                               }
-		| literalToken = <IDENTIFIER>      { result = new ASTId(literalToken.image);                    }
-		| <MINUS> result = ParsePrimary()  { result = new ASTNeg(result);                               }
-		| <NOT>   result = ParsePrimary()  { result = new ASTNot(result);                               }
+		  tok = <INTEGER_LITERAL> { result = new ASTInt(Integer.parseInt(tok.image)); }
+		| tok = <TRUE>            { result = new ASTBool(true);                       }
+		| tok = <FALSE>           { result = new ASTBool(false);                      }
+		| tok = <UNIT>            { result = new ASTUnit();                           }
+		| tok = <STRING_LITERAL>  { result = new ASTString(tok.image);                }
+		| tok = <IDENTIFIER>      { result = new ASTId(tok.image);                    }
+
+		| <MINUS> result = ParsePrimary() { result = new ASTNeg(result); }
+		| <NOT>   result = ParsePrimary() { result = new ASTNot(result); }
+
 		| result = ParseFunctionLiteral()
+
 		| <IF> result = ParseLogicalOr()
 		  <LEFT_BRACE>  thenBranch = ParseLetBinding() <RIGHT_BRACE>
 		  <ELSE>
 		  <LEFT_BRACE>  elseBranch = ParseLetBinding() <RIGHT_BRACE>
 		  { result = new ASTIf(result, thenBranch, elseBranch); }
+
 		| <PRINT>   result = ParsePrimary() { result = new ASTPrint(result);   }
 		| <PRINTLN> result = ParsePrimary() { result = new ASTPrintln(result); }
-		| <LEFT_PAREN> result = ParseLetBinding() <RIGHT_PAREN>
-		| <LEFT_BRACE> result = ParseLetBinding() <RIGHT_BRACE>
+
+		| <WHILE> result = ParseLogicalOr()
+		  <LEFT_BRACE> body = ParseLetBinding() <RIGHT_BRACE>
+		  { result = new ASTWhile(result, body); }
+
+		| <CELL>  result = ParsePrimary() { result = new ASTCell(result);  }
+		| <DEREF> result = ParsePrimary() { result = new ASTDeref(result); }
+
+		| <LEFT_PAREN>  result = ParseLetBinding() <RIGHT_PAREN>
+		| <LEFT_BRACE>  result = ParseLetBinding() <RIGHT_BRACE>
+
+		| result = ParseStructTuple()
+		| result = ParseMatchExpr()
 	)
 	{ return result; }
 }

@@ -6,23 +6,23 @@ import interpreter.values.IValue;
 import visitor.Visitor;
 
 public class ASTAssign implements ASTNode {
-    private final ASTNode left, right;
+	private final ASTNode target, value;
 
-    public ASTAssign(ASTNode left, ASTNode right) {
-        this.left = left;
-        this.right = right;
-    }
+	public ASTAssign(ASTNode target, ASTNode value) {
+		this.target = target;
+		this.value = value;
+	}
 
-    @Override
-    public IValue accept(Visitor v) throws InterpreterError {
-        return v.visitAssign(this);
-    }
+	@Override
+	public IValue accept(Visitor v) throws InterpreterError {
+		return v.visitAssign(this);
+	}
 
-    public ASTNode getLeft() {
-        return left;
-    }
+	public ASTNode getTarget() {
+		return target;
+	}
 
-    public ASTNode getRight() {
-        return right;
-    }
+	public ASTNode getValue() {
+		return value;
+	}
 }

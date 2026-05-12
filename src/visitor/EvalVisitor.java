@@ -1,5 +1,9 @@
 package visitor;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import ast.ASTNode;
 import ast.bindings.ASTLet;
 import ast.control.ASTIf;
 import ast.control.ASTSeq;
@@ -12,6 +16,7 @@ import ast.literals.ASTBool;
 import ast.literals.ASTId;
 import ast.literals.ASTInt;
 import ast.literals.ASTString;
+import ast.literals.ASTUnit;
 import ast.memory.ASTAssign;
 import ast.memory.ASTCell;
 import ast.memory.ASTDeref;
@@ -30,6 +35,7 @@ import ast.operators.ASTOr;
 import ast.operators.ASTPlus;
 import ast.operators.ASTSub;
 import ast.structs.ASTMatch;
+import ast.structs.ASTStructPattern;
 import ast.structs.ASTStructTuple;
 import interpreter.environment.Bind;
 import interpreter.environment.Environment;
@@ -42,6 +48,7 @@ import interpreter.values.VClosure;
 import interpreter.values.VInt;
 import interpreter.values.VString;
 import interpreter.values.VStructTuple;
+import interpreter.values.VUnit;
 
 public class EvalVisitor implements Visitor {
 	private Environment<IValue> environment;
@@ -152,6 +159,10 @@ public class EvalVisitor implements Visitor {
 
 	public IValue visitId(ASTId node) throws InterpreterError {
 		return environment.find(node.getId());
+	}
+
+	public IValue visitUnit(ASTUnit node) throws InterpreterError {
+		return new VUnit();
 	}
 
 	// ----------------------------------------------------
@@ -421,11 +432,54 @@ public class EvalVisitor implements Visitor {
 	// ----------------------------------------------------
 	// Struct Tuples and Pattern Matching
 	// ----------------------------------------------------
-	public IValue visitMatch(ASTMatch node) throws InterpreterError {
-		return null;
+	public IValue visitStructPattern(ASTStructPattern node) throws InterpreterError {
+		throw new InterpreterError("pettern: not to be evaluated");
 	}
 
 	public IValue visitStructTuple(ASTStructTuple node) throws InterpreterError {
-		return null;
+		List<IValue> evaluatedElements = new ArrayList<>();
+
+		for (ASTNode element : node.getElements()) {
+			evaluatedElements.add(element.accept(this));
+		}
+
+		return new VStructTuple(node.getTag(), evaluatedElements);
+	}
+
+	public IValue visitMatch(ASTMatch node) throws InterpreterError {
+		IValue target = node.getTargetExpression().accept(this);
+
+		if (!(target instanceof VStructTuple)) {
+			throw new InterpreterError("match: VStructTuple expected, found: " + target);
+		}
+
+		VStructTuple structTuple = (VStructTuple) target;
+		ASTStructPattern pattern = node.getStructPattern();
+
+		if (!structTuple.getTag().equals(pattern.getTag())) {
+			return node.getOnMismatchExpression().accept(this);
+		}
+
+		List<String> patternVars = pattern.getBoundVariables();
+		List<IValue> tupleValues = structTuple.getValues();
+
+		if (patternVars.size() != tupleValues.size()) {
+			return node.getOnMismatchExpression().accept(this);
+		}
+
+		this.environment = this.environment.beginScope();
+		try {
+			for (int i = 0; i < patternVars.size(); i++) {
+				String varName = patternVars.get(i);
+
+				// example of what is being skipped: #tag()
+				if (!varName.equals("_")) {
+					this.environment.assoc(varName, tupleValues.get(i));
+				}
+			}
+			return node.getOnMatchExpression().accept(this);
+		} finally {
+			this.environment = this.environment.endScope();
+		}
 	}
 }

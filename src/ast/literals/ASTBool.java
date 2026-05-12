@@ -6,18 +6,18 @@ import interpreter.values.IValue;
 import visitor.Visitor;
 
 public class ASTBool implements ASTNode {
-    private final boolean value;
+	private final boolean value;
 
-    public ASTBool(boolean value) {
-        this.value = value;
-    }
+	public ASTBool(boolean value) {
+		this.value = value;
+	}
 
-    @Override
-    public IValue accept(Visitor v) throws InterpreterError {
-        return v.visitBool(this);
-    }
+	@Override
+	public IValue accept(Visitor v) throws InterpreterError {
+		return v.visitBool(this);
+	}
 
-    public boolean getValue() {
-        return value;
-    }
+	public boolean getValue() {
+		return value;
+	}
 }

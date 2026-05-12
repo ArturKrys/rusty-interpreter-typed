@@ -12,8 +12,10 @@ public class VClosure implements IValue {
 	private final Environment<IValue> capturedEnv;
 	private final Store store;
 
-	public VClosure(String param, ASTNode body,
-			Environment<IValue> capturedEnv, Store store) {
+	public VClosure(String param,
+			ASTNode body,
+			Environment<IValue> capturedEnv,
+			Store store) {
 		this.param = param;
 		this.body = body;
 		this.capturedEnv = capturedEnv;

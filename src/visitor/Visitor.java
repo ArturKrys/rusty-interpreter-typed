@@ -12,6 +12,7 @@ import ast.literals.ASTBool;
 import ast.literals.ASTId;
 import ast.literals.ASTInt;
 import ast.literals.ASTString;
+import ast.literals.ASTUnit;
 import ast.memory.ASTAssign;
 import ast.memory.ASTCell;
 import ast.memory.ASTDeref;
@@ -30,6 +31,7 @@ import ast.operators.ASTOr;
 import ast.operators.ASTPlus;
 import ast.operators.ASTSub;
 import ast.structs.ASTMatch;
+import ast.structs.ASTStructPattern;
 import ast.structs.ASTStructTuple;
 import interpreter.errors.InterpreterError;
 import interpreter.values.IValue;
@@ -73,6 +75,8 @@ public interface Visitor {
 	IValue visitBool(ASTBool node) throws InterpreterError;
 
 	IValue visitId(ASTId node) throws InterpreterError;
+
+	public IValue visitUnit(ASTUnit node) throws InterpreterError;
 
 	// ----------------------------------------------------
 	// Memory
@@ -123,7 +127,10 @@ public interface Visitor {
 	// ----------------------------------------------------
 	// Struct Tuples and Pattern Matching
 	// ----------------------------------------------------
-	IValue visitMatch(ASTMatch node) throws InterpreterError;
+
+	public IValue visitStructPattern(ASTStructPattern node) throws InterpreterError;
 
 	IValue visitStructTuple(ASTStructTuple node) throws InterpreterError;
+
+	IValue visitMatch(ASTMatch node) throws InterpreterError;
 }
