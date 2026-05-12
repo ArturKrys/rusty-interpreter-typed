@@ -307,6 +307,11 @@ ASTNode ParseMultiplicativeOrCall(): /* Term */
 				{ left = new ASTApp(left, right); }
 			)
 		)
+
+		|
+
+		/* f() */
+		<UNIT> { left = new ASTApp(left, new ASTUnit()); }
 	)*
 	{ return left; }
 }
@@ -370,7 +375,7 @@ ASTNode ParseStructTuple(): /* StructTuple */
 
 		// No-param shorthand: #Tag()
 		<UNIT>
-        { elems.add(new ASTUnit()); }
+		{ elems.add(new ASTUnit()); }
 	)
 	{ return new ASTStructTuple(tag.image, elems); }
 }
@@ -391,7 +396,7 @@ ASTNode ParseMatchExpr(): /* Match */
 	<MATCH> targetExpr = ParseLetBinding()
 	<LEFT_BRACE>
 		pattern = ParseStructPattern()
-		       <ARROW> matchBranch = ParseLetBinding()
+			   <ARROW> matchBranch = ParseLetBinding()
 		<ELSE> <ARROW> elseBranch  = ParseLetBinding()
 	<RIGHT_BRACE>
 	{ return new ASTMatch(targetExpr, pattern, matchBranch, elseBranch); }
@@ -412,7 +417,7 @@ ASTStructPattern ParseStructPattern(): /* Pattern */
 		<RIGHT_PAREN>
 		|
 		<UNIT>
-        { params.add("_");}
+		{ params.add("_");}
 	)
 	{ return new ASTStructPattern(tag.image, params); }
 }
