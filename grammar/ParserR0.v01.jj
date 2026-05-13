@@ -138,15 +138,16 @@ TOKEN:
  * Precedence / call chain (high → low):
  *
  *   ParsePrimary
- *     ↑ ParseMultiplicativeOrCall      (* / and function application)
- *       ↑ ParseAdditive                (+ -)
- *         ↑ ParseComparison            (== ~= > < >= <=)
- *           ↑ ParseLogicalAnd          (&&)
- *             ↑ ParseLogicalOr         (||)
- *               ↑ ParseAssignmentExpr  (:=)
- *                 ↑ ParseSequence      (;)
- *                   ↑ ParseLetBinding  (let ... in)
- *                     ↑ ParseProgram
+ *     ↑ ParseCall                        (function application)
+ *       ↑ ParseMultiplicative            (*)
+ *         ↑ ParseAdditive                (+ -)
+ *           ↑ ParseComparison            (== ~= > < >= <=)
+ *             ↑ ParseLogicalAnd          (&&)
+ *               ↑ ParseLogicalOr         (||)
+ *                 ↑ ParseAssignmentExpr  (:=)
+ *                   ↑ ParseSequence      (;)
+ *                     ↑ ParseLetBinding  (let ... in)
+ *                       ↑ ParseProgram
  */
 
 /* ParseProgram ::= EOF | ParseLetBinding ;; */
@@ -276,23 +277,33 @@ ASTNode ParseAdditive(): /* Exp */
 	{ return left; }
 }
 
-/* ParseMultiplicativeOrCall ::= ParsePrimary ( ( * | / | ( args ) ) ParsePrimary )* */
-ASTNode ParseMultiplicativeOrCall(): /* Term */
+/* ParseMultiplicative ::= ParseCall ( ( * | / ) ParseCall )* */
+ASTNode ParseMultiplicative(): /* Term */
 {
-	Token mulOp;      // captures * or /
-	Token callParen;  // captures ( at a function call site
+	Token mulOp;
+	ASTNode left, right;
+}
+{
+	left = ParseCall()
+	(
+		mulOp = <MULTIPLY> right = ParseCall() { left = new ASTMult(left, right); }
+		|
+		mulOp = <DIVIDE>   right = ParseCall() { left = new ASTDiv(left, right);  }
+	)*
+	{ return left; }
+}
+
+
+/* ParseCall ::= ParsePrimary ( "(" ParseLetBinding ( "," ParseLetBinding )* ")" | "()" )* */
+/* Note: f(a, b) -> app(app(f, a), b) */
+ASTNode ParseCall():
+{
 	ASTNode left, right;
 }
 {
 	left = ParsePrimary()
 	(
-		mulOp = <MULTIPLY> right = ParsePrimary() { left = new ASTMult(left, right); }
-		|
-		mulOp = <DIVIDE>   right = ParsePrimary() { left = new ASTDiv(left, right);  }
-		|
-		/* Function application: f(arg1, arg2, ...)
-								 f(a, b) -> app(app(f, a), b) */
-		<LEFT_PAREN>
+		<LEFT_PAREN> /* Multi-param */
 		(
 			right = ParseLetBinding()
 			(
@@ -307,16 +318,15 @@ ASTNode ParseMultiplicativeOrCall(): /* Term */
 				{ left = new ASTApp(left, right); }
 			)
 		)
-
 		|
-
-		/* f() */
-		<UNIT> { left = new ASTApp(left, new ASTUnit()); }
+		<UNIT> /* no-param */
+		{ left = new ASTApp(left, new ASTUnit()); }
 	)*
 	{ return left; }
 }
 
 /* ParseFunctionLiteral ::= | id ( , id )* | ParsePrimary */
+/* Note: |x, y| body -> abs(x, abs(y, body)) */
 ASTNode ParseFunctionLiteral(): /* Function */
 {
 	Token param;
@@ -324,8 +334,7 @@ ASTNode ParseFunctionLiteral(): /* Function */
 }
 {
 	(
-		// Multi-param: |x, y| body -> abs(x, abs(y, body))
-		<BAR>
+		<BAR> /* Multi-param */
 			param = <IDENTIFIER>
 			{
 				result = new ASTFun(param.image, null);
@@ -343,11 +352,9 @@ ASTNode ParseFunctionLiteral(): /* Function */
 			{
 				((ASTFun) current).setBody(body);
 			}
-
 		|
-
-		// No-param shorthand: || body
-		<OR> body=ParsePrimary()
+		<OR> /* No-param */
+			body=ParsePrimary()
 			{
 				result = new ASTFun("_", body);
 			}
@@ -365,16 +372,12 @@ ASTNode ParseStructTuple(): /* StructTuple */
 {
 	tag = <TAG>
 	(
-		// Multi-param: #Color(9,2,3)
-		<LEFT_PAREN>
+		<LEFT_PAREN> /* Multi-param */
 			elem = ParseLetBinding() { elems.add(elem); }
 			( <COMMA> elem = ParseLetBinding() { elems.add(elem); } )*
 		<RIGHT_PAREN>
-
 		|
-
-		// No-param shorthand: #Tag()
-		<UNIT>
+		<UNIT> /* no-param */
 		{ elems.add(new ASTUnit()); }
 	)
 	{ return new ASTStructTuple(tag.image, elems); }
@@ -411,12 +414,12 @@ ASTStructPattern ParseStructPattern(): /* Pattern */
 {
 	tag = <TAG>
 	(
-		<LEFT_PAREN>
+		<LEFT_PAREN> /* Multi-param */
 			param = <IDENTIFIER> { params.add(param.image); }
 			( <COMMA> param = <IDENTIFIER> { params.add(param.image); } )*
 		<RIGHT_PAREN>
 		|
-		<UNIT>
+		<UNIT> /* no-param */
 		{ params.add("_");}
 	)
 	{ return new ASTStructPattern(tag.image, params); }
