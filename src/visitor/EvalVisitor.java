@@ -223,16 +223,18 @@ public class EvalVisitor implements Visitor {
 		IValue leftResult = node.getLeft().accept(this);
 		IValue rightResult = node.getRight().accept(this);
 
-		if (leftResult instanceof VInt) {
-			if (rightResult instanceof VInt) {
-				int leftOperand = ((VInt) leftResult).getval();
-				int rightOperand = ((VInt) rightResult).getval();
-
-				return new VInt(leftOperand + rightOperand);
-			}
-			throw new InterpreterError("plus: integer expected, found: " + rightResult);
+		if (leftResult instanceof VString || rightResult instanceof VString) {
+			return new VString(leftResult.toStr() + rightResult.toStr());
 		}
-		throw new InterpreterError("plus: integer expected, found: " + leftResult);
+
+		if (leftResult instanceof VInt && rightResult instanceof VInt) {
+			int l = ((VInt) leftResult).getval();
+			int r = ((VInt) rightResult).getval();
+			return new VInt(l + r);
+		}
+
+		throw new InterpreterError("plus: integer or string expected, found: "
+				+ leftResult + " and " + rightResult);
 	}
 
 	public IValue visitSub(ASTSub node) throws InterpreterError {

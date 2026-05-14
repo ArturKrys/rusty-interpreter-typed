@@ -7,6 +7,11 @@ package parser;
 
 import java.util.List;
 import java.util.ArrayList;
+//import java.util.Set;
+//import java.util.HashSet;
+//import java.util.Map;
+//import java.util.LinkedHashMap;
+//import java.util.Collections;
 
 import ast.ASTNode;
 import ast.bindings.ASTLet;
@@ -176,6 +181,7 @@ ASTNode ParseLetBinding(): /* Let */
 				<LET> boundName = <IDENTIFIER> <BIND> initExpr = ParseLogicalOr() <SEMICOLON>
 				{ declarations.add(new Bind(boundName.image, initExpr)); }
 			)+ /* + -> 1 or more */
+			// { checkSafeRecursion(declarations); } /* challange */
 			bodyExpr = ParseSequence()
 			{ result = new ASTLet(declarations, bodyExpr); }
 		)
@@ -268,11 +274,11 @@ ASTNode ParseAdditive(): /* Exp */
 	ASTNode left, right;
 }
 {
-	left = ParseMultiplicativeOrCall()
+	left = ParseMultiplicative()
 	(
-		addOp = <PLUS>  right = ParseMultiplicativeOrCall() { left = new ASTPlus(left, right); }
+		addOp = <PLUS>  right = ParseMultiplicative() { left = new ASTPlus(left, right); }
 		|
-		addOp = <MINUS> right = ParseMultiplicativeOrCall() { left = new ASTSub(left, right);  }
+		addOp = <MINUS> right = ParseMultiplicative() { left = new ASTSub(left, right);  }
 	)*
 	{ return left; }
 }
