@@ -3,7 +3,7 @@ package interpreter.environment;
 import java.util.HashMap;
 import java.util.Map;
 
-import interpreter.errors.InterpreterError;
+import interpreter.errors.BindingException;
 
 public class Environment<E> {
 	private Environment<E> ancestor;
@@ -27,20 +27,20 @@ public class Environment<E> {
 		return ancestor;
 	}
 
-	public void assoc(String id, E bind) throws InterpreterError {
+	public void assoc(String id, E bind) throws BindingException {
 		if (bindings.containsKey(id)) {
-			throw new InterpreterError("Duplicate binding for " + id);
+			throw new BindingException("Duplicate binding for " + id);
 		}
 		bindings.put(id, bind);
 	}
 
-	public E find(String id) throws InterpreterError {
+	public E find(String id) throws BindingException {
 		if (bindings.containsKey(id)) {
 			return bindings.get(id);
 		} else if (ancestor != null) {
 			return ancestor.find(id);
 		} else {
-			throw new InterpreterError("Unbound identifier: " + id);
+			throw new BindingException("Unbound identifier: " + id);
 		}
 	}
 }

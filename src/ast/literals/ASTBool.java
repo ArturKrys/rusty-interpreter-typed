@@ -1,8 +1,6 @@
 package ast.literals;
 
 import ast.ASTNode;
-import interpreter.errors.InterpreterError;
-import interpreter.values.IValue;
 import visitor.Visitor;
 
 public class ASTBool implements ASTNode {
@@ -13,7 +11,7 @@ public class ASTBool implements ASTNode {
 	}
 
 	@Override
-	public IValue accept(Visitor v) throws InterpreterError {
+	public <T, E extends Exception> T accept(Visitor<T, E> v) throws E {
 		return v.visitBool(this);
 	}
 

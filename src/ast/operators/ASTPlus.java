@@ -1,8 +1,6 @@
 package ast.operators;
 
 import ast.ASTNode;
-import interpreter.errors.InterpreterError;
-import interpreter.values.IValue;
 import visitor.Visitor;
 
 public class ASTPlus implements ASTNode {
@@ -14,7 +12,7 @@ public class ASTPlus implements ASTNode {
 	}
 
 	@Override
-	public IValue accept(Visitor v) throws InterpreterError {
+	public <T, E extends Exception> T accept(Visitor<T, E> v) throws E {
 		return v.visitPlus(this);
 	}
 

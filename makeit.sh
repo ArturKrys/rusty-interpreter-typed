@@ -12,9 +12,9 @@ rm -rf "$GEN"
 mkdir -p "$BIN" "$GEN/parser"
 
 # --- Generate parser from grammar ---
-javacc -OUTPUT_DIRECTORY="$GEN/parser" "$GRAMMAR/ParserR0.v01.jj"
+javacc -OUTPUT_DIRECTORY="$GEN/parser" "$GRAMMAR/ParserR1T.v0.jj"
 
 # --- Compile everything together ---
 javac -d "$BIN" $(find "$SRC" "$GEN" -name "*.java")
 
-echo "Done. Run with: ./r0int"
+echo "Done. Run with: ./r1tint"

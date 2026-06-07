@@ -2,8 +2,9 @@ package interpreter.values;
 
 import ast.ASTNode;
 import interpreter.environment.Environment;
-import interpreter.errors.InterpreterError;
 import interpreter.environment.Store;
+import interpreter.errors.BindingException;
+import interpreter.errors.InterpreterError;
 import visitor.EvalVisitor;
 
 public class VClosure implements IValue {
@@ -24,7 +25,12 @@ public class VClosure implements IValue {
 
 	public IValue apply(IValue arg) throws InterpreterError {
 		Environment<IValue> callEnv = capturedEnv.beginScope();
-		callEnv.assoc(param, arg);
+
+		try {
+			callEnv.assoc(param, arg);
+		} catch (BindingException e) {
+			throw new InterpreterError("closure: " + e.getMessage());
+		}
 
 		EvalVisitor callVisitor = new EvalVisitor(callEnv, store);
 		return body.accept(callVisitor);

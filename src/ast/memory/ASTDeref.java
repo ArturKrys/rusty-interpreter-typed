@@ -1,8 +1,6 @@
 package ast.memory;
 
 import ast.ASTNode;
-import interpreter.errors.InterpreterError;
-import interpreter.values.IValue;
 import visitor.Visitor;
 
 public class ASTDeref implements ASTNode {
@@ -13,7 +11,7 @@ public class ASTDeref implements ASTNode {
 	}
 
 	@Override
-	public IValue accept(Visitor v) throws InterpreterError {
+	public <T, E extends Exception> T accept(Visitor<T, E> v) throws E {
 		return v.visitDeref(this);
 	}
 

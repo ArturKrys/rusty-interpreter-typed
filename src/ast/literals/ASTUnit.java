@@ -1,8 +1,6 @@
 package ast.literals;
 
 import ast.ASTNode;
-import interpreter.errors.InterpreterError;
-import interpreter.values.IValue;
 import visitor.Visitor;
 
 public class ASTUnit implements ASTNode {
@@ -10,7 +8,7 @@ public class ASTUnit implements ASTNode {
 	}
 
 	@Override
-	public IValue accept(Visitor v) throws InterpreterError {
+	public <T, E extends Exception> T accept(Visitor<T, E> v) throws E {
 		return v.visitUnit(this);
 	}
 }

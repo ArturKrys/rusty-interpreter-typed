@@ -1,33 +1,31 @@
 package ast.functions;
 
 import ast.ASTNode;
-import interpreter.errors.InterpreterError;
-import interpreter.values.IValue;
 import visitor.Visitor;
 
 public class ASTFun implements ASTNode {
-    private String param;
-    private ASTNode body;
+	private final String param;
+	private ASTNode bodyExpr;
 
-    public ASTFun(String param, ASTNode body) {
-        this.param = param;
-        this.body = body;
-    }
+	public ASTFun(String param, ASTNode bodyExpr) {
+		this.param = param;
+		this.bodyExpr = bodyExpr;
+	}
 
-    @Override
-    public IValue accept(Visitor v) throws InterpreterError {
-        return v.visitFun(this);
-    }
+	@Override
+	public <T, E extends Exception> T accept(Visitor<T, E> v) throws E {
+		return v.visitFun(this);
+	}
 
-    public String getParam() {
-        return param;
-    }
+	public void setBodyExpr(ASTNode bodyExpr) {
+		this.bodyExpr = bodyExpr;
+	}
 
-    public ASTNode getBody() {
-        return body;
-    }
+	public String getParam() {
+		return param;
+	}
 
-    public void setBody(ASTNode body) {
-        this.body = body;
-    }
+	public ASTNode getBodyExpr() {
+		return bodyExpr;
+	}
 }

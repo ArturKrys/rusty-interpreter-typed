@@ -1,0 +1,730 @@
+options {
+	STATIC = false;
+}
+
+PARSER_BEGIN(Parser)
+package parser;
+
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+
+import ast.ASTNode;
+import ast.bindings.ASTLet;
+import ast.bindings.ASTTypeDefinition;
+import ast.control.ASTIf;
+import ast.control.ASTSeq;
+import ast.control.ASTWhile;
+import ast.functions.ASTApp;
+import ast.functions.ASTFun;
+import ast.io.ASTPrint;
+import ast.io.ASTPrintln;
+import ast.literals.ASTBool;
+import ast.literals.ASTId;
+import ast.literals.ASTInt;
+import ast.literals.ASTString;
+import ast.literals.ASTUnit;
+import ast.memory.ASTAssign;
+import ast.memory.ASTCell;
+import ast.memory.ASTDeref;
+import ast.operators.ASTAnd;
+import ast.operators.ASTDif;
+import ast.operators.ASTDiv;
+import ast.operators.ASTEq;
+import ast.operators.ASTGt;
+import ast.operators.ASTGteq;
+import ast.operators.ASTLt;
+import ast.operators.ASTLteq;
+import ast.operators.ASTMult;
+import ast.operators.ASTNeg;
+import ast.operators.ASTNot;
+import ast.operators.ASTOr;
+import ast.operators.ASTPlus;
+import ast.operators.ASTSub;
+import ast.structs.ASTMatch;
+import ast.structs.ASTStructPattern;
+import ast.structs.ASTStructTuple;
+import ast.type.ASTType;
+import ast.type.ASTTypeArrow;
+import ast.type.ASTTypeBool;
+import ast.type.ASTTypeEnum;
+import ast.type.ASTTypeId;
+import ast.type.ASTTypeInt;
+import ast.type.ASTTypeRef;
+import ast.type.ASTTypeString;
+import ast.type.ASTTypeStruct;
+import ast.type.ASTTypeUnit;
+import interpreter.environment.Bind;
+
+public class Parser {
+
+}
+
+PARSER_END(Parser)
+
+
+/* ─── SKIP ───────────────────────────────────────────────────────────────── */
+
+SKIP:
+{
+	  " "
+	| "\t"
+	| "\r"
+	| "\n"
+	| < "//" (~["\r", "\n"])* >
+	| < "/*" > : ML_COM_NEXT
+}
+
+<ML_COM_NEXT> SKIP:
+{
+	  < "*/" > : DEFAULT
+	| < ~[] >
+}
+
+
+/* ─── TOKENS ─────────────────────────────────────────────────────────────── */
+
+TOKEN:
+{
+	// Keywords
+	  < LET:     "let"      >
+	| < MUT:     "mut"      >
+	| < TRUE:    "true"     >
+	| < FALSE:   "false"    >
+	| < IF:      "if"       >
+	| < ELSE:    "else"     >
+	| < WHILE:   "while"    >
+	| < MATCH:   "match"    >
+	| < CELL:    "cell"     >
+	| < FN:      "fn"       >
+	| < PRINT:   "print!"   >
+	| < PRINTLN: "println!" >
+
+	// Types
+	| < TYPE:    "type"     >
+	| < INT:     "int"      >
+	| < BOOL:    "bool"     >
+	| < STRING:  "string"   >
+	| < REF:     "ref"      >
+	| < UNION:   "union"    >
+	| < STRUCT:  "struct"   >
+	| <ENUM:     "enum"     >
+
+	// Arithmetic operators
+	| < PLUS:     "+" >
+	| < MINUS:    "-" >
+	| < MULTIPLY: "*" >
+	| < DIVIDE:   "/" >
+
+	// Comparison operators
+	| < EQUAL_TO:        "==" >
+	| < NOT_EQUAL_TO:    "~=" >
+	| < GREATER_THAN:    ">"  >
+	| < LESS_THAN:       "<"  >
+	| < GREATER_THAN_EQ: ">=" >
+	| < LESS_THAN_EQ:    "<=" >
+
+	// Logical / unary operators
+	| < AND: "&&" >
+	| < OR:  "||" >
+	| < NOT: "~"  >
+
+	// Memory operators
+	| < DEREF:  "!" >
+
+	// Delimiters & punctuation
+	| < LEFT_PAREN:       "("  >
+	| < RIGHT_PAREN:      ")"  >
+	| < LEFT_BRACE:       "{"  >
+	| < RIGHT_BRACE:      "}"  >
+	| < BIND:             "="  >
+	| < ASSIGN:           ":=" >
+	| < ARROW:            "=>" >
+	| < SARROW:           "->" >
+	| < COLON:            ":"  >
+	| < SEMICOLON:        ";"  >
+	| < DOUBLE_SEMICOLON: ";;" >
+	| < COMMA:            ","  >
+	| < BAR:              "|"  >
+
+	// Compound / structured literals
+	| < UNIT:            "()"                                                               >
+	| < TAG:             "#" ["a"-"z","A"-"Z"] ( ["a"-"z","A"-"Z","0"-"9"] )*               >
+	| < STRING_LITERAL:  "\"" ( ~["\"","\\"] | "\\" ["n","t","b","r","f","\\","\""] )* "\"" >
+	| < IDENTIFIER:      ["a"-"z","A"-"Z"] ( ["a"-"z","A"-"Z","0"-"9"] )*                   >
+	| < INTEGER_LITERAL: ( ["0"-"9"] )+                                                     >
+}
+
+
+/* ─── GRAMMAR ─────────────────────────────────────────────────────────────── */
+
+/*
+ * Precedence / call chain (high → low):
+ *
+ *   ParsePrimary
+ *     ↑ ParseCall                         (function application)
+ *       ↑ ParseMultiplicative             (* /)
+ *         ↑ ParseAdditive                 (+ -)
+ *           ↑ ParseComparison             (== ~= > < >= <=)
+ *             ↑ ParseLogicalAnd           (&&)
+ *               ↑ ParseLogicalOr          (||)
+ *                 ↑ ParseAssignmentExpr   (:=)
+ *                   ↑ ParseSequence       (;)
+ *                     ↑ ParseLetOrTypeDef (let/type)
+ *                       ↑ ParseProgram
+ */
+
+/*
+	ParseProgram ::= EOF
+				   | ParseLetOrTypeDef ;;
+*/
+ASTNode ParseProgram(): /* Start */
+{
+	ASTNode result;
+}
+{
+	<EOF>                                          { return null;   }
+	|
+	result = ParseLetOrTypeDef() <DOUBLE_SEMICOLON>  { return result; }
+}
+
+/*
+	ParseLetOrTypeDef ::= ParseSequence
+						  |
+						  (
+						    ( "let" ( "mut" )? id ( ":" Type )? "=" ParseLogicalOr ";" )
+						    | ( "type" id "=" Type ";" )
+						  )+ ParseSequence
+*/
+ASTNode ParseLetOrTypeDef(): /* Let */
+{
+	Token nameToken;
+	ASTNode rootNode = null;
+	ASTNode boundExpression;
+	ASTNode bodyExpression;
+
+	ASTType declaredType = null;
+	ASTType rhsType;
+	// 0 = Initial, 1 = TYPE block, 2 = LET block
+	int lastParsedMode = 0;
+
+	List<Bind> letBindings = new ArrayList<Bind>();
+	HashMap<String, ASTType> typeDefinitions = new HashMap<String, ASTType>();
+
+	ASTNode innermostNode = null;
+	boolean isMutable = false;
+}
+{
+	(
+		// CASE 1: Just a sequence (no bindings or type definitions)
+		rootNode = ParseSequence()
+	|
+		// CASE 2: One or more LET or TYPE declarations, followed by a sequence
+		(
+			// --- LET Declaration ---
+			(
+				<LET>
+				{ isMutable = false; }
+				( <MUT> { isMutable = true; } )?
+
+				nameToken = <IDENTIFIER> { declaredType = null; }
+				( <COLON> declaredType = Type() )?
+
+				<BIND> boundExpression = ParseLogicalOr() <SEMICOLON>
+				{
+					if (lastParsedMode == 1) {
+						ASTTypeDefinition previousTypeDef = (ASTTypeDefinition) innermostNode;
+						ASTLet newLet = new ASTLet(letBindings, null);
+						previousTypeDef.setBodyExpr(newLet);
+						innermostNode = newLet;
+						typeDefinitions = new HashMap<String, ASTType>();
+					} else if (rootNode == null) {
+						rootNode = new ASTLet(letBindings, null);
+						innermostNode = rootNode;
+					}
+
+					Bind newBinding = new Bind(nameToken.image, isMutable, declaredType, boundExpression);
+					letBindings.add(newBinding);
+
+					lastParsedMode = 2;
+				}
+			)
+		|
+			// --- TYPE Declaration ---
+			(
+				<TYPE> nameToken = <IDENTIFIER> <BIND> rhsType = Type() <SEMICOLON>
+				{
+					if (lastParsedMode == 2) {
+						ASTLet previousLet = (ASTLet) innermostNode;
+						ASTTypeDefinition newTypeDef = new ASTTypeDefinition(typeDefinitions, null);
+						previousLet.setBodyExpr(newTypeDef);
+						innermostNode = newTypeDef;
+						letBindings = new ArrayList<Bind>();
+					} else if (rootNode == null) {
+						rootNode = new ASTTypeDefinition(typeDefinitions, null);
+						innermostNode = rootNode;
+					}
+
+					typeDefinitions.put(nameToken.image, rhsType);
+					lastParsedMode = 1;
+				}
+			)
+		)+
+
+		// --- Body Sequence ---
+		bodyExpression = ParseSequence()
+		{
+			if (lastParsedMode == 1) {
+				ASTTypeDefinition previousTypeDef = (ASTTypeDefinition) innermostNode;
+				previousTypeDef.setBodyExpr(bodyExpression);
+			} else if (lastParsedMode == 2) {
+				ASTLet previousLet = (ASTLet) innermostNode;
+				previousLet.setBodyExpr(bodyExpression);
+			}
+		}
+	)
+
+	{ return rootNode; }
+}
+
+/*
+	Type ::= PrimaryType ( "->" Type )?
+*/
+ASTType Type(): /* Type */
+{
+	ASTType leftType;
+	ASTType rightType;
+}
+{
+	leftType = PrimaryType()
+	(
+		<SARROW> rightType = Type()
+		{ leftType = new ASTTypeArrow(leftType, rightType); }
+	)?
+	{ return leftType; }
+}
+
+/*
+	TypeList ::= ( Type ( "," Type )* )?
+*/
+List<ASTType> TypeList(): /* LabelList */
+{
+	ASTType currentType;
+	List<ASTType> typeList = new ArrayList<ASTType>();
+}
+{
+	(
+		currentType = Type()
+		{ typeList.add(currentType); }
+		(
+			<COMMA> currentType = Type()
+			{ typeList.add(currentType); }
+		)*
+	)?
+	{ return typeList; }
+}
+
+/*
+	EnumType ::= "enum" "{" ( <TAG> ":" "(" TypeList ")" ( "," <TAG> ":" "(" TypeList ")" )* )? "}"
+*/
+ASTType EnumType(): /* EnumT */
+{
+	List<ASTType> typeList;
+	Token nameToken;
+	Map<String, List<ASTType>> variants = new LinkedHashMap<String, List<ASTType>>();
+}
+{
+	<ENUM>
+	<LEFT_BRACE>
+	(
+		nameToken = <TAG> <COLON> <LEFT_PAREN> typeList = TypeList() <RIGHT_PAREN>
+		{
+			variants.put(nameToken.image, typeList);
+		}
+		(
+			<COMMA> nameToken = <TAG> <COLON> <LEFT_PAREN> typeList = TypeList() <RIGHT_PAREN>
+			{
+				if (variants.containsKey(nameToken.image)) {
+					throw new ParseException("Duplicate tag '" + nameToken.image + "' in enum definition at line " + nameToken.beginLine);
+				}
+				variants.put(nameToken.image, typeList);
+			}
+		)*
+	)?
+	<RIGHT_BRACE>
+	{
+		return new ASTTypeEnum(variants);
+	}
+}
+
+/*
+	PrimaryType ::= "int"
+				  | <IDENTIFIER>
+				  | "bool"
+				  | "()"
+				  | "string"
+				  | "ref" "(" Type ")"
+				  | "cell" "(" Type ")"
+				  | <TAG> "(" TypeList ")"
+				  | EnumType
+*/
+ASTType PrimaryType(): /* TypeF */
+{
+	ASTType parsedType;
+	List<ASTType> typeList;
+	Token nameToken;
+}
+{
+	(
+		  <INT>      { parsedType = ASTTypeInt.TINT; }
+		| nameToken = <IDENTIFIER>
+					 { parsedType = new ASTTypeId(nameToken.image); }
+		| <BOOL>     { parsedType = ASTTypeBool.TBOOL; }
+		| <UNIT>     { parsedType = ASTTypeUnit.TUNIT; }
+		| <STRING>   { parsedType = new ASTTypeString(); }
+		| <REF> <LEFT_PAREN> parsedType = Type() <RIGHT_PAREN>
+					 { parsedType = new ASTTypeRef(parsedType); }
+		| <CELL> <LEFT_PAREN> parsedType = Type() <RIGHT_PAREN>
+					 { parsedType = new ASTTypeRef(parsedType); }
+		| nameToken = <TAG> <LEFT_PAREN> typeList = TypeList() <RIGHT_PAREN>
+					 { parsedType = new ASTTypeStruct(nameToken.image, typeList); }
+		| parsedType = EnumType()
+	)
+	{ return parsedType; }
+}
+
+/*
+	ParseSequence ::= ParseAssignmentExpr ( ";" ParseAssignmentExpr )*
+*/
+ASTNode ParseSequence(): /* Seq */
+{
+	Token seqSep;
+	ASTNode left, right;
+}
+{
+	left = ParseAssignmentExpr()
+	(
+		seqSep = <SEMICOLON> right = ParseAssignmentExpr()
+		{ left = new ASTSeq(left, right); }
+	)*
+	{ return left; }
+}
+
+/*
+	ParseAssignmentExpr ::= ParseLogicalOr ( ":=" ParseLogicalOr )*
+*/
+ASTNode ParseAssignmentExpr(): /* SeqExp */
+{
+	Token assignOp;
+	ASTNode left, right;
+}
+{
+	left = ParseLogicalOr()
+	(
+		assignOp = <ASSIGN> right = ParseLogicalOr()
+		{ left = new ASTAssign(left, right); }
+	)*
+	{ return left; }
+}
+
+/*
+	ParseLogicalOr ::= ParseLogicalAnd ( "||" ParseLogicalAnd )*
+*/
+ASTNode ParseLogicalOr(): /* BA */
+{
+	Token logicalOp;
+	ASTNode left, right;
+}
+{
+	left = ParseLogicalAnd()
+	(
+		logicalOp = <OR> right = ParseLogicalAnd()
+		{ left = new ASTOr(left, right); }
+	)*
+	{ return left; }
+}
+
+/*
+	ParseLogicalAnd ::= ParseComparison ( "&&" ParseComparison )*
+*/
+ASTNode ParseLogicalAnd(): /* BM */
+{
+	Token logicalOp;
+	ASTNode left, right;
+}
+{
+	left = ParseComparison()
+	(
+		logicalOp = <AND> right = ParseComparison()
+		{ left = new ASTAnd(left, right); }
+	)*
+	{ return left; }
+}
+
+/*
+	ParseComparison ::= ParseAdditive ( ( "=="
+										| "~="
+										| ">"
+										| "<"
+										| ">="
+										| "<=" ) ParseAdditive )?
+*/
+ASTNode ParseComparison(): /* Rel */
+{
+	ASTNode left, right;
+}
+{
+	left = ParseAdditive()
+	(
+		  <EQUAL_TO>        right = ParseAdditive() { left = new ASTEq(left, right);   }
+		| <GREATER_THAN>    right = ParseAdditive() { left = new ASTGt(left, right);   }
+		| <LESS_THAN>       right = ParseAdditive() { left = new ASTLt(left, right);   }
+		| <GREATER_THAN_EQ> right = ParseAdditive() { left = new ASTGteq(left, right); }
+		| <LESS_THAN_EQ>    right = ParseAdditive() { left = new ASTLteq(left, right); }
+		| <NOT_EQUAL_TO>    right = ParseAdditive() { left = new ASTDif(left, right);  }
+	)?
+	{ return left; }
+}
+
+/*
+	ParseAdditive ::= ParseMultiplicative ( ( "+" | "-" ) ParseMultiplicative )*
+*/
+ASTNode ParseAdditive(): /* Exp */
+{
+	Token addOp;
+	ASTNode left, right;
+}
+{
+	left = ParseMultiplicative()
+	(
+		addOp = <PLUS>  right = ParseMultiplicative() { left = new ASTPlus(left, right); }
+		|
+		addOp = <MINUS> right = ParseMultiplicative() { left = new ASTSub(left, right);  }
+	)*
+	{ return left; }
+}
+
+/*
+	ParseMultiplicative ::= ParseCall ( ( "*" | "/" ) ParseCall )*
+*/
+ASTNode ParseMultiplicative(): /* Term */
+{
+	Token mulOp;
+	ASTNode left, right;
+}
+{
+	left = ParseCall()
+	(
+		mulOp = <MULTIPLY> right = ParseCall() { left = new ASTMult(left, right); }
+		|
+		mulOp = <DIVIDE>   right = ParseCall() { left = new ASTDiv(left, right);  }
+	)*
+	{ return left; }
+}
+
+/*
+	ParseCall ::= ParsePrimary ( "(" ParseLetOrTypeDef ( "," ParseLetOrTypeDef )* ")"
+							   | "()" )*
+	Note: f(a, b) -> app(app(f, a), b)
+*/
+ASTNode ParseCall():
+{
+	ASTNode left, right;
+}
+{
+	left = ParsePrimary()
+	(
+		<LEFT_PAREN> /* Multi-arg */
+		(
+			right = ParseLetOrTypeDef()
+			(
+				<RIGHT_PAREN>
+				{ left = new ASTApp(left, right); }
+				|
+				(
+					<COMMA> { left = new ASTApp(left, right); }
+					right = ParseLetOrTypeDef()
+				)+
+				<RIGHT_PAREN>
+				{ left = new ASTApp(left, right); }
+			)
+		)
+		|
+		<UNIT> /* No-arg */
+		{ left = new ASTApp(left, new ASTUnit()); }
+	)*
+	{ return left; }
+}
+
+/*
+	ParseFunctionLiteral ::= "|" id (":" Type)? ("," id (":" Type)?)* "|" ParsePrimary
+							| "||" ParsePrimary
+		Note: |x, y| body -> abs(x, abs(y, body))
+			  || body     -> abs("_", body)
+*/
+ASTNode ParseFunctionLiteral(): /* Function */
+{
+	Token param;
+	ASTType paramType = null;
+	ASTNode result, current = null, body;
+}
+{
+	(
+		<BAR> /* Multi-param */
+			param = <IDENTIFIER> ( <COLON> paramType = Type() )?
+			{
+				result = new ASTFun(param.image, null);
+				current = result;
+			}
+			(
+				<COMMA> param = <IDENTIFIER> ( <COLON> paramType = Type() )?
+				{
+					body = new ASTFun(param.image, null);
+					((ASTFun) current).setBodyExpr(body);
+					current = body;
+				}
+			)*
+		<BAR> body = ParsePrimary()
+			{
+				((ASTFun) current).setBodyExpr(body);
+			}
+		|
+		<OR> /* No-param */
+			body = ParsePrimary()
+			{
+				result = new ASTFun("_", body);
+			}
+	)
+	{ return result; }
+}
+
+/*
+	ParseStructTuple ::= <TAG> ( "(" ParseLetOrTypeDef ("," ParseLetOrTypeDef)* ")"
+							   | "()" )
+*/
+ASTNode ParseStructTuple(): /* StructTuple */
+{
+	Token tag;
+	ASTNode elem;
+	List<ASTNode> elems = new ArrayList<ASTNode>();
+}
+{
+	tag = <TAG>
+	(
+		<LEFT_PAREN> /* Multi-elem */
+			elem = ParseLetOrTypeDef() { elems.add(elem); }
+			( <COMMA> elem = ParseLetOrTypeDef() { elems.add(elem); } )*
+		<RIGHT_PAREN>
+		|
+		<UNIT> /* No-elem */
+		{ elems.add(new ASTUnit()); }
+	)
+	{ return new ASTStructTuple(tag.image, elems); }
+}
+
+/*
+	ParseMatchExpr ::=
+		"match" ParseLetOrTypeDef "{"
+			ParseStructPattern "=>" ParseLetOrTypeDef
+			"else" "=>" ParseLetOrTypeDef
+		"}"
+*/
+ASTNode ParseMatchExpr(): /* Match */
+{
+	ASTNode targetExpr, matchBranch, elseBranch;
+	ASTStructPattern pattern;
+}
+{
+	<MATCH> targetExpr = ParseLetOrTypeDef()
+	<LEFT_BRACE>
+		pattern = ParseStructPattern()
+				<ARROW> matchBranch = ParseLetOrTypeDef()
+		<ELSE> <ARROW> elseBranch = ParseLetOrTypeDef()
+	<RIGHT_BRACE>
+	{ return new ASTMatch(targetExpr, pattern, matchBranch, elseBranch); }
+}
+
+/*
+	ParseStructPattern ::= <TAG> ( "(" id ("," id)* ")"
+								 | "()" )
+*/
+ASTStructPattern ParseStructPattern(): /* Pattern */
+{
+	Token tag, param;
+	List<String> params = new ArrayList<String>();
+}
+{
+	tag = <TAG>
+	(
+		<LEFT_PAREN> /* Multi-param */
+			param = <IDENTIFIER> { params.add(param.image); }
+			( <COMMA> param = <IDENTIFIER> { params.add(param.image); } )*
+		<RIGHT_PAREN>
+		|
+		<UNIT> /* No-param */
+		{ params.add("_"); }
+	)
+	{ return new ASTStructPattern(tag.image, params); }
+}
+
+/*
+	ParsePrimary ::=
+	   INTEGER_LITERAL | true | false | "()" | STRING_LITERAL | id
+	 | "-" ParsePrimary | "~" ParsePrimary
+	 | ParseFunctionLiteral
+	 | "if" ParseLogicalOr "{" ParseLetOrTypeDef "}" "else" "{" ParseLetOrTypeDef "}"
+	 | "print!"   ParsePrimary
+	 | "println!" ParsePrimary
+	 | "while" ParseLogicalOr "{" ParseLetOrTypeDef "}"
+	 | "cell" ParsePrimary
+	 | "!"   ParsePrimary
+	 | "(" ParseLetOrTypeDef ")"
+	 | "{" ParseLetOrTypeDef "}"
+	 | ParseStructTuple
+	 | ParseMatchExpr
+*/
+ASTNode ParsePrimary(): /* Fact */
+{
+	Token tok;
+	ASTNode result, thenBranch, elseBranch, body;
+}
+{
+	(
+		  tok = <INTEGER_LITERAL> { result = new ASTInt(Integer.parseInt(tok.image)); }
+		| tok = <TRUE>            { result = new ASTBool(true);                       }
+		| tok = <FALSE>           { result = new ASTBool(false);                      }
+		| tok = <UNIT>            { result = new ASTUnit();                           }
+		| tok = <STRING_LITERAL>  { result = new ASTString(tok.image);                }
+		| tok = <IDENTIFIER>      { result = new ASTId(tok.image);                    }
+
+		| <MINUS> result = ParsePrimary() { result = new ASTNeg(result); }
+		| <NOT>   result = ParsePrimary() { result = new ASTNot(result); }
+
+		| result = ParseFunctionLiteral()
+
+		| <IF> result = ParseLogicalOr()
+		  <LEFT_BRACE>  thenBranch = ParseLetOrTypeDef() <RIGHT_BRACE>
+		  <ELSE>
+		  <LEFT_BRACE>  elseBranch = ParseLetOrTypeDef() <RIGHT_BRACE>
+		  { result = new ASTIf(result, thenBranch, elseBranch); }
+
+		| <PRINT>   result = ParsePrimary() { result = new ASTPrint(result);   }
+		| <PRINTLN> result = ParsePrimary() { result = new ASTPrintln(result); }
+
+		| <WHILE> result = ParseLogicalOr()
+		  <LEFT_BRACE> body = ParseLetOrTypeDef() <RIGHT_BRACE>
+		  { result = new ASTWhile(result, body); }
+
+		| <CELL>  result = ParsePrimary() { result = new ASTCell(result);  }
+		| <DEREF> result = ParsePrimary() { result = new ASTDeref(result); }
+
+		| <LEFT_PAREN>  result = ParseLetOrTypeDef() <RIGHT_PAREN>
+		| <LEFT_BRACE>  result = ParseLetOrTypeDef() <RIGHT_BRACE>
+
+		| result = ParseStructTuple()
+		| result = ParseMatchExpr()
+	)
+	{ return result; }
+}

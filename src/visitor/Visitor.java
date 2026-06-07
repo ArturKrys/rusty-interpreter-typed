@@ -1,6 +1,7 @@
 package visitor;
 
 import ast.bindings.ASTLet;
+import ast.bindings.ASTTypeDefinition;
 import ast.control.ASTIf;
 import ast.control.ASTSeq;
 import ast.control.ASTWhile;
@@ -33,104 +34,104 @@ import ast.operators.ASTSub;
 import ast.structs.ASTMatch;
 import ast.structs.ASTStructPattern;
 import ast.structs.ASTStructTuple;
-import interpreter.errors.InterpreterError;
-import interpreter.values.IValue;
 
-public interface Visitor {
+public interface Visitor<T, E extends Exception> {
 	// ----------------------------------------------------
 	// Bindings
 	// ----------------------------------------------------
-	IValue visitLet(ASTLet node) throws InterpreterError;
+	T visitLet(ASTLet node) throws E;
+
+	T visitTypeDefinition(ASTTypeDefinition node) throws E;
 
 	// ----------------------------------------------------
 	// Control
 	// ----------------------------------------------------
-	IValue visitIf(ASTIf node) throws InterpreterError;
+	T visitIf(ASTIf node) throws E;
 
-	IValue visitWhile(ASTWhile node) throws InterpreterError;
+	T visitWhile(ASTWhile node) throws E;
 
-	IValue visitSeq(ASTSeq node) throws InterpreterError;
+	T visitSeq(ASTSeq node) throws E;
 
 	// ----------------------------------------------------
 	// Functions
 	// ----------------------------------------------------
-	IValue visitFun(ASTFun node) throws InterpreterError;
+	T visitFun(ASTFun node) throws E;
 
-	IValue visitApp(ASTApp node) throws InterpreterError;
+	T visitApp(ASTApp node) throws E;
 
 	// ----------------------------------------------------
 	// I/O Operations
 	// ----------------------------------------------------
-	IValue visitPrint(ASTPrint node) throws InterpreterError;
+	T visitPrint(ASTPrint node) throws E;
 
-	IValue visitPrintln(ASTPrintln node) throws InterpreterError;
+	T visitPrintln(ASTPrintln node) throws E;
 
 	// ----------------------------------------------------
 	// literals
 	// ----------------------------------------------------
-	IValue visitInt(ASTInt node) throws InterpreterError;
+	T visitInt(ASTInt node) throws E;
 
-	IValue visitString(ASTString node) throws InterpreterError;
+	T visitString(ASTString node) throws E;
 
-	IValue visitBool(ASTBool node) throws InterpreterError;
+	T visitBool(ASTBool node) throws E;
 
-	IValue visitId(ASTId node) throws InterpreterError;
+	T visitId(ASTId node) throws E;
 
-	public IValue visitUnit(ASTUnit node) throws InterpreterError;
+	public T visitUnit(ASTUnit node) throws E;
 
 	// ----------------------------------------------------
 	// Memory
 	// ----------------------------------------------------
-	IValue visitAssign(ASTAssign node) throws InterpreterError;
+	T visitAssign(ASTAssign node) throws E;
 
-	IValue visitCell(ASTCell node) throws InterpreterError;
+	T visitCell(ASTCell node) throws E;
 
-	IValue visitDeref(ASTDeref node) throws InterpreterError;
+	T visitDeref(ASTDeref node) throws E;
 
 	// ----------------------------------------------------
 	// Arithmetic Operations
 	// ----------------------------------------------------
-	IValue visitPlus(ASTPlus node) throws InterpreterError;
+	T visitPlus(ASTPlus node) throws E;
 
-	IValue visitSub(ASTSub node) throws InterpreterError;
+	T visitSub(ASTSub node) throws E;
 
-	IValue visitMult(ASTMult node) throws InterpreterError;
+	T visitMult(ASTMult node) throws E;
 
-	IValue visitDiv(ASTDiv node) throws InterpreterError;
+	T visitDiv(ASTDiv node) throws E;
 
-	IValue visitNeg(ASTNeg node) throws InterpreterError;
+	T visitNeg(ASTNeg node) throws E;
 
 	// ----------------------------------------------------
 	// Relational Operations
 	// ----------------------------------------------------
-	IValue visitEq(ASTEq node) throws InterpreterError;
+	T visitEq(ASTEq node) throws E;
 
-	IValue visitDif(ASTDif node) throws InterpreterError;
+	T visitDif(ASTDif node) throws E;
 
-	IValue visitGt(ASTGt node) throws InterpreterError;
+	T visitGt(ASTGt node) throws E;
 
-	IValue visitGteq(ASTGteq node) throws InterpreterError;
+	T visitGteq(ASTGteq node) throws E;
 
-	IValue visitLt(ASTLt node) throws InterpreterError;
+	T visitLt(ASTLt node) throws E;
 
-	IValue visitLteq(ASTLteq node) throws InterpreterError;
+	T visitLteq(ASTLteq node) throws E;
 
 	// ----------------------------------------------------
 	// Logical Operations
 	// ----------------------------------------------------
-	IValue visitAnd(ASTAnd node) throws InterpreterError;
+	T visitAnd(ASTAnd node) throws E;
 
-	IValue visitOr(ASTOr node) throws InterpreterError;
+	T visitOr(ASTOr node) throws E;
 
-	IValue visitNot(ASTNot node) throws InterpreterError;
+	T visitNot(ASTNot node) throws E;
 
 	// ----------------------------------------------------
 	// Struct Tuples and Pattern Matching
 	// ----------------------------------------------------
 
-	public IValue visitStructPattern(ASTStructPattern node) throws InterpreterError;
+	public T visitStructPattern(ASTStructPattern node) throws E;
 
-	IValue visitStructTuple(ASTStructTuple node) throws InterpreterError;
+	T visitStructTuple(ASTStructTuple node) throws E;
 
-	IValue visitMatch(ASTMatch node) throws InterpreterError;
+	T visitMatch(ASTMatch node) throws E;
 }
