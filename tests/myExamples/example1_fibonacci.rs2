@@ -1,0 +1,10 @@
+// Example 1: Recursive Fibonacci
+//
+// Expected output:
+//   55
+
+let fib: int -> int = |n: int| {
+    if n <= 1 { n }
+    else { fib(n - 1) + fib(n - 2) }
+};
+println! (fib(10));;

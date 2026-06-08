@@ -49,24 +49,24 @@ public class ASTTypeEnum implements ASTType {
 	}
 
 	@Override
-	public boolean eqt(ASTType t) {
-		if (this == t)
+	public boolean eqt(ASTType other) {
+		if (this == other)
 			return true;
-		if (!(t instanceof ASTTypeEnum))
+		if (!(other instanceof ASTTypeEnum))
 			return false;
 
-		ASTTypeEnum other = (ASTTypeEnum) t;
+		ASTTypeEnum otherEnum = (ASTTypeEnum) other;
 
-		if (this.options.size() != other.options.size())
+		if (this.options.size() != otherEnum.options.size())
 			return false;
 
 		for (Entry<String, List<ASTType>> entry : this.options.entrySet()) {
 			String tag = entry.getKey();
-			if (!other.options.containsKey(tag))
+			if (!otherEnum.options.containsKey(tag))
 				return false;
 
 			List<ASTType> thisTypes = entry.getValue();
-			List<ASTType> otherTypes = other.options.get(tag);
+			List<ASTType> otherTypes = otherEnum.options.get(tag);
 
 			if (thisTypes.size() != otherTypes.size())
 				return false;

@@ -1,0 +1,18 @@
+// Example 3: FizzBuzz (1 to 15) using a heap-allocated cell as counter
+//
+// Expected output (one per line):
+//   1  2  Fizz  4  Buzz  Fizz  7  8  Fizz  Buzz  11  Fizz  13  14  FizzBuzz
+
+let mymod = |a: int, b: int| { a - (a / b) * b };
+let i = cell(1);
+while !i <= 15 {
+    if mymod(!i, 15) == 0 { println! ("FizzBuzz") }
+    else {
+        if mymod(!i, 3) == 0 { println! ("Fizz") }
+        else {
+            if mymod(!i, 5) == 0 { println! ("Buzz") }
+            else { println! (!i) }
+        }
+    };
+    i := !i + 1
+};;

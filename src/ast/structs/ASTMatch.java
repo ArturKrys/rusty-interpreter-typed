@@ -2,23 +2,21 @@ package ast.structs;
 
 import ast.ASTNode;
 import visitor.Visitor;
+import java.util.List;
 
 public class ASTMatch implements ASTNode {
 	private final ASTNode targetExpression;
-	private final ASTStructPattern structPattern;
-	private final ASTNode onMatchExpression;
-	private final ASTNode onMismatchExpression;
+	private final List<ASTStructPattern> patterns;
+	private final List<ASTNode> branches;
 
 	public ASTMatch(
 			ASTNode targetExpression,
-			ASTStructPattern structPattern,
-			ASTNode onMatchExpression,
-			ASTNode onMismatchExpression) {
+			List<ASTStructPattern> patterns,
+			List<ASTNode> branches) {
 
 		this.targetExpression = targetExpression;
-		this.structPattern = structPattern;
-		this.onMatchExpression = onMatchExpression;
-		this.onMismatchExpression = onMismatchExpression;
+		this.patterns = patterns;
+		this.branches = branches;
 	}
 
 	@Override
@@ -30,15 +28,11 @@ public class ASTMatch implements ASTNode {
 		return targetExpression;
 	}
 
-	public ASTStructPattern getStructPattern() {
-		return structPattern;
+	public List<ASTStructPattern> getPatterns() {
+		return patterns;
 	}
 
-	public ASTNode getOnMatchExpression() {
-		return onMatchExpression;
-	}
-
-	public ASTNode getOnMismatchExpression() {
-		return onMismatchExpression;
+	public List<ASTNode> getBranches() {
+		return branches;
 	}
 }

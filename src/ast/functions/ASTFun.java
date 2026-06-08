@@ -1,14 +1,17 @@
 package ast.functions;
 
 import ast.ASTNode;
+import ast.type.ASTType;
 import visitor.Visitor;
 
 public class ASTFun implements ASTNode {
 	private final String param;
+	private final ASTType paramType;
 	private ASTNode bodyExpr;
 
-	public ASTFun(String param, ASTNode bodyExpr) {
+	public ASTFun(String param, ASTType paramType, ASTNode bodyExpr) {
 		this.param = param;
+		this.paramType = paramType;
 		this.bodyExpr = bodyExpr;
 	}
 
@@ -23,6 +26,10 @@ public class ASTFun implements ASTNode {
 
 	public String getParam() {
 		return param;
+	}
+
+	public ASTType getParamType() {
+		return paramType;
 	}
 
 	public ASTNode getBodyExpr() {

@@ -18,6 +18,7 @@ import ast.literals.ASTId;
 import ast.literals.ASTInt;
 import ast.literals.ASTString;
 import ast.literals.ASTUnit;
+import ast.memory.ASTAddr;
 import ast.memory.ASTAssign;
 import ast.memory.ASTCell;
 import ast.memory.ASTDeref;
@@ -40,14 +41,17 @@ import ast.structs.ASTStructPattern;
 import ast.structs.ASTStructTuple;
 import interpreter.environment.Bind;
 import interpreter.environment.Environment;
+import interpreter.environment.MemoryManager;
 import interpreter.environment.Store;
 import interpreter.errors.BindingException;
 import interpreter.errors.InterpreterError;
+import interpreter.errors.MemoryPanicException;
 import interpreter.values.IValue;
 import interpreter.values.VBool;
 import interpreter.values.VCell;
 import interpreter.values.VClosure;
 import interpreter.values.VInt;
+import interpreter.values.VMutAddress;
 import interpreter.values.VString;
 import interpreter.values.VStructTuple;
 import interpreter.values.VUnit;
@@ -55,10 +59,24 @@ import interpreter.values.VUnit;
 public class EvalVisitor implements Visitor<IValue, InterpreterError> {
 	private Environment<IValue> environment;
 	private Store<IValue> store;
+	private MemoryManager memory;
 
 	public EvalVisitor(Environment<IValue> environment, Store<IValue> store) {
+		this(environment, store, new MemoryManager());
+	}
+
+	public EvalVisitor(Environment<IValue> environment, Store<IValue> store, MemoryManager memory) {
 		this.environment = environment;
 		this.store = store;
+		this.memory = memory;
+	}
+
+	private IValue lookupRawIdentifier(String id) throws InterpreterError {
+		try {
+			return environment.find(id);
+		} catch (BindingException e) {
+			throw new InterpreterError("id: " + e.getMessage());
+		}
 	}
 
 	// ----------------------------------------------------
@@ -67,20 +85,37 @@ public class EvalVisitor implements Visitor<IValue, InterpreterError> {
 	@Override
 	public IValue visitLet(ASTLet node) throws InterpreterError {
 		this.environment = this.environment.beginScope();
+		int mutableBindings = 0;
 
 		try {
 			for (Bind binding : node.getDeclarations()) {
 				String variableName = binding.getId();
 				IValue evaluatedValue = binding.getExp().accept(this);
 
-				this.environment.assoc(variableName, evaluatedValue);
+				if (!variableName.equals("_")) {
+					if (binding.isMutable()) {
+						MemoryManager.VirtualAddress address = this.memory.push(evaluatedValue);
+						mutableBindings++;
+						this.environment.assoc(variableName, new VMutAddress(address));
+					} else {
+						this.environment.assoc(variableName, evaluatedValue);
+					}
+				}
 			}
 			return node.getBodyExpr().accept(this);
 
-		} catch (BindingException e) {
+		} catch (BindingException | MemoryPanicException e) {
 			throw new InterpreterError("let: " + e.getMessage());
 		} finally {
-			this.environment = this.environment.endScope();
+			try {
+				for (int i = 0; i < mutableBindings; i++) {
+					this.memory.pop();
+				}
+			} catch (MemoryPanicException e) {
+				throw new InterpreterError("let cleanup: " + e.getMessage());
+			} finally {
+				this.environment = this.environment.endScope();
+			}
 		}
 	}
 
@@ -137,7 +172,7 @@ public class EvalVisitor implements Visitor<IValue, InterpreterError> {
 	// ----------------------------------------------------
 	@Override
 	public IValue visitFun(ASTFun node) throws InterpreterError {
-		return new VClosure(node.getParam(), node.getBodyExpr(), this.environment, this.store);
+		return new VClosure(node.getParam(), node.getBodyExpr(), this.environment, this.store, this.memory);
 	}
 
 	@Override
@@ -190,8 +225,12 @@ public class EvalVisitor implements Visitor<IValue, InterpreterError> {
 	@Override
 	public IValue visitId(ASTId node) throws InterpreterError {
 		try {
-			return environment.find(node.getId());
-		} catch (BindingException e) {
+			IValue value = environment.find(node.getId());
+			if (value instanceof VMutAddress) {
+				return memory.read(((VMutAddress) value).getAddress());
+			}
+			return value;
+		} catch (BindingException | MemoryPanicException e) {
 			throw new InterpreterError("id: " + e.getMessage());
 		}
 	}
@@ -205,16 +244,67 @@ public class EvalVisitor implements Visitor<IValue, InterpreterError> {
 	// Memory
 	// ----------------------------------------------------
 	@Override
+	public IValue visitAddr(ASTAddr node) throws InterpreterError {
+		if (!(node.getTarget() instanceof ASTId)) {
+			throw new InterpreterError("addr: mutable identifier expected");
+		}
+
+		ASTId target = (ASTId) node.getTarget();
+		IValue value = lookupRawIdentifier(target.getId());
+
+		if (!(value instanceof VMutAddress)) {
+			throw new InterpreterError("addr: mutable identifier expected, found: " + target.getId());
+		}
+
+		return ((VMutAddress) value).getAddress();
+	}
+
+	@Override
 	public IValue visitAssign(ASTAssign node) throws InterpreterError {
+		if (node.getTarget() instanceof ASTId) {
+			ASTId targetId = (ASTId) node.getTarget();
+			IValue rawTarget = lookupRawIdentifier(targetId.getId());
+			IValue newValue = node.getValue().accept(this);
+
+			try {
+				if (rawTarget instanceof VMutAddress) {
+					this.memory.write(((VMutAddress) rawTarget).getAddress(), newValue);
+					return newValue;
+				}
+
+				if (rawTarget instanceof MemoryManager.VirtualAddress) {
+					this.memory.write((MemoryManager.VirtualAddress) rawTarget, newValue);
+					return newValue;
+				}
+
+				if (rawTarget instanceof VCell) {
+					store.set(((VCell) rawTarget).getLocation(), newValue);
+					return newValue;
+				}
+			} catch (MemoryPanicException e) {
+				throw new InterpreterError("assign: " + e.getMessage());
+			}
+		}
+
 		IValue target = node.getTarget().accept(this);
-
-		if (!(target instanceof VCell))
-			throw new InterpreterError("assign: cell expected, found: " + target);
-
-		int location = ((VCell) target).getLocation();
 		IValue newValue = node.getValue().accept(this);
-		store.set(location, newValue);
-		return newValue;
+
+		if (target instanceof VCell) {
+			int location = ((VCell) target).getLocation();
+			store.set(location, newValue);
+			return newValue;
+		}
+
+		if (target instanceof MemoryManager.VirtualAddress) {
+			try {
+				this.memory.write((MemoryManager.VirtualAddress) target, newValue);
+				return newValue;
+			} catch (MemoryPanicException e) {
+				throw new InterpreterError("assign: " + e.getMessage());
+			}
+		}
+
+		throw new InterpreterError("assign: assignable target expected, found: " + target);
 	}
 
 	@Override
@@ -228,11 +318,20 @@ public class EvalVisitor implements Visitor<IValue, InterpreterError> {
 	public IValue visitDeref(ASTDeref node) throws InterpreterError {
 		IValue reference = node.getReference().accept(this);
 
-		if (!(reference instanceof VCell))
-			throw new InterpreterError("deref: cell expected, found: " + reference);
+		if (reference instanceof VCell) {
+			int location = ((VCell) reference).getLocation();
+			return store.get(location);
+		}
 
-		int location = ((VCell) reference).getLocation();
-		return store.get(location);
+		if (reference instanceof MemoryManager.VirtualAddress) {
+			try {
+				return memory.read((MemoryManager.VirtualAddress) reference);
+			} catch (MemoryPanicException e) {
+				throw new InterpreterError("deref: " + e.getMessage());
+			}
+		}
+
+		throw new InterpreterError("deref: reference expected, found: " + reference);
 	}
 
 	// ----------------------------------------------------
@@ -475,7 +574,7 @@ public class EvalVisitor implements Visitor<IValue, InterpreterError> {
 	// ----------------------------------------------------
 	@Override
 	public IValue visitStructPattern(ASTStructPattern node) throws InterpreterError {
-		throw new InterpreterError("pettern: not to be evaluated");
+		throw new InterpreterError("pattern: not to be evaluated");
 	}
 
 	@Override
@@ -491,41 +590,46 @@ public class EvalVisitor implements Visitor<IValue, InterpreterError> {
 
 	@Override
 	public IValue visitMatch(ASTMatch node) throws InterpreterError {
-		IValue target = node.getTargetExpression().accept(this);
+		IValue targetVal = node.getTargetExpression().accept(this);
 
-		if (!(target instanceof VStructTuple)) {
-			throw new InterpreterError("match: VStructTuple expected, found: " + target);
+		if (!(targetVal instanceof VStructTuple)) {
+			throw new InterpreterError("match: VStructTuple expected, found: \\\" + target");
 		}
+		VStructTuple evaluatedTuple = (VStructTuple) targetVal;
 
-		VStructTuple structTuple = (VStructTuple) target;
-		ASTStructPattern pattern = node.getStructPattern();
+		List<ASTStructPattern> patterns = node.getPatterns();
+		List<ASTNode> branches = node.getBranches();
 
-		if (!structTuple.getTag().equals(pattern.getTag())) {
-			return node.getOnMismatchExpression().accept(this);
-		}
+		for (int i = 0; i < patterns.size(); i++) {
+			ASTStructPattern pattern = patterns.get(i);
 
-		List<String> patternVars = pattern.getBoundVariables();
-		List<IValue> tupleValues = structTuple.getValues();
+			if (pattern.getTag().equals(evaluatedTuple.getTag())) {
 
-		if (patternVars.size() != tupleValues.size()) {
-			return node.getOnMismatchExpression().accept(this);
-		}
+				environment = environment.beginScope();
 
-		this.environment = this.environment.beginScope();
-		try {
-			for (int i = 0; i < patternVars.size(); i++) {
-				String varName = patternVars.get(i);
+				List<String> patternIdentifiers = pattern.getBoundVariables();
+				List<IValue> tupleValues = evaluatedTuple.getValues();
 
-				// example of what is being skipped: #tag()
-				if (!varName.equals("_")) {
-					this.environment.assoc(varName, tupleValues.get(i));
+				if (patternIdentifiers.size() <= tupleValues.size()) {
+					for (int j = 0; j < patternIdentifiers.size(); j++) {
+						try {
+							environment.assoc(patternIdentifiers.get(j), tupleValues.get(j));
+						} catch (BindingException e) {
+							throw new InterpreterError("match: " + e.getMessage());
+						}
+					}
+				} else {
+					throw new InterpreterError("match mismatch: pattern expects " +
+							patternIdentifiers.size() + " values, but runtime tuple only has " + tupleValues.size());
 				}
+
+				IValue result = branches.get(i).accept(this);
+				environment = environment.endScope();
+
+				return result;
 			}
-			return node.getOnMatchExpression().accept(this);
-		} catch (BindingException e) {
-			throw new InterpreterError("match: " + e.getMessage());
-		} finally {
-			this.environment = this.environment.endScope();
 		}
+
+		throw new InterpreterError("match: no pattern found for tag " + evaluatedTuple.getTag());
 	}
 }

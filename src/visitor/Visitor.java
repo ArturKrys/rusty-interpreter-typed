@@ -14,6 +14,7 @@ import ast.literals.ASTId;
 import ast.literals.ASTInt;
 import ast.literals.ASTString;
 import ast.literals.ASTUnit;
+import ast.memory.ASTAddr;
 import ast.memory.ASTAssign;
 import ast.memory.ASTCell;
 import ast.memory.ASTDeref;
@@ -82,6 +83,8 @@ public interface Visitor<T, E extends Exception> {
 	// ----------------------------------------------------
 	// Memory
 	// ----------------------------------------------------
+	T visitAddr(ASTAddr node) throws E;
+
 	T visitAssign(ASTAssign node) throws E;
 
 	T visitCell(ASTCell node) throws E;

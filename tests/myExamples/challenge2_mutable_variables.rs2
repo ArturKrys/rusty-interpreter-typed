@@ -1,0 +1,21 @@
+// CHALLENGE 2: Stack Allocated Mutable Variables  (let mut)
+//
+//
+// factorial(5) = 5! = 120
+//
+// Note: contrast with heap cells, here NO `cell`, `!`, or garbage is produced.
+//
+// Expected output:
+//   120
+
+let factorial = |n: int| {
+    let mut result = 1;
+    let mut i      = 1;
+    while i <= n {
+        result := result * i;
+        i      := i + 1
+    };
+    result
+};
+
+println! (factorial(5));;

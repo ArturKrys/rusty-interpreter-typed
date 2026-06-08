@@ -1,0 +1,10 @@
+// TYPE ERROR EXAMPLE: argument type mismatch
+//
+// `square` has type  int -> int.
+// Calling it with the boolean literal `true` should be rejected
+//
+// Expected outcome:
+//   TypeCheckError
+
+let square = |n: int| { n * n };
+println! (square(true));;

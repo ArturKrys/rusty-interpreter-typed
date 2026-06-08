@@ -1,0 +1,19 @@
+// Example 5:  closures capturing heap cells
+//
+// Expected output:
+//   3
+//   2
+
+let make_counter = |start: int| {
+    let c = cell(start);
+    || { c := !c + 1; !c }
+};
+
+let counter1 = make_counter(0);
+let counter2 = make_counter(0);
+
+counter1(());
+counter1(());
+counter2(());
+println! (counter1(()));
+println! (counter2(()));;

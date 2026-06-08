@@ -1,0 +1,129 @@
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{top=0.85in,bottom=0.85in,left=0.9in,right=0.9in}
+\usepackage{hyperref}
+\usepackage{amsmath,amssymb}
+\usepackage{mathpartir}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{parskip}
+\setlength{\parskip}{4pt}
+\usepackage{titlesec}
+\titlespacing*{\section}{0pt}{8pt}{3pt}
+\titlespacing*{\subsection}{0pt}{5pt}{2pt}
+
+\definecolor{codegray}{rgb}{0.45,0.45,0.45}
+\definecolor{backcolour}{rgb}{0.96,0.96,0.94}
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    basicstyle=\ttfamily\scriptsize,
+    breaklines=true, keepspaces=true,
+    frame=single, framerule=0.3pt,
+    rulecolor=\color{codegray!40},
+    numbers=none, showstringspaces=false, tabsize=2
+}
+\lstset{style=mystyle}
+
+\title{\textbf{Rusty 2 Interpreter --- Phase 2 Report}}
+\author{Artur Krystopchuk \\ \small ist1104145}
+\date{\today}
+
+\begin{document}
+\maketitle\vspace{-10pt}
+
+% ------------------------------------------------------------------
+\section{Architecture}
+
+The implementation uses the \emph{Visitor} pattern: \texttt{TypeCheckVisitor} and
+\texttt{EvalVisitor} each traverse the AST, threading a scoped \texttt{Environment<T>}.
+Three private helpers in \texttt{TypeCheckVisitor} carry most of the logic:
+\texttt{unfold} resolves type-alias names, \texttt{isSubtype} implements $A <: B$, and
+\texttt{leastUpperBound} computes the join of two types.
+
+% ------------------------------------------------------------------
+\section{Static Type Checker}
+
+\paragraph{Subtyping.}
+\texttt{isSubtype} covers reflexivity, then three structural cases.
+\emph{Arrows} are contravariant in the domain and covariant in the codomain.
+\emph{References} (\texttt{ref} and \texttt{\&}) are \emph{invariant}: both
+$A <: B$ and $B <: A$ must hold, preventing variance through mutable
+locations.
+\emph{Enums} combine width and depth subtyping in a single check: for $E_1 <: E_2$,
+every tag in $E_1$ must appear in $E_2$, and for each shared tag the field tuple of
+$E_1$ must be at least as long as $E_2$'s, with each shared prefix field a subtype:
+$$\frac{(\text{all } i \in 1\dots k) \ A_i = (C_1, \dots, C_{a_i}, \dots, C_{b_i}) <: B_i = (D_1, \dots, D_{a_i}) \quad C_p <: D_p \ (\text{all } p \in p\dots a_i)}{\text{enum } \{l_1 : A_1, \dots, l_k : A_k\} <: \text{enum } \{l_1 : B_1, \dots, l_k : B_k, \dots, l_n : B_n\}}$$
+
+
+\paragraph{Least upper bound.}
+\texttt{leastUpperBound} is called in four situations:
+\texttt{visitIf} and \texttt{visitMatch} use it to unify the types of
+the two (or more) branches into a single return type.
+\texttt{visitEq} and \texttt{visitDif} use it purely to \emph{check}
+that the two operands are type-compatible before returning \texttt{bool}.
+For enums the LUB merges tag sets and trims each shared tag's field list to the
+longest common equal-type prefix.
+
+\paragraph{Pattern matching.}
+\texttt{visitMatch} checks that each pattern tag belongs to the matched enum, that
+bound-variable counts do not exceed field counts, and that the match is exhaustive
+(every tag in the enum type must appear in some branch).
+
+% ------------------------------------------------------------------
+\section{Recursive Types (Challenge 1)}
+
+\texttt{visitTypeDefinition} simply inserts name-to-type bindings into a new scope.
+\texttt{ASTTypeId} represents a not-yet-resolved alias; \texttt{unfold} resolves it
+by looking up the name and recursing, so a self-referential definition such as
+\texttt{type Btree = enum \{ \#nil:(unit), \#node:(Btree,int,Btree) \}} works because
+the inner \texttt{Btree} is only expanded when a structural comparison actually needs it.
+
+Recursive \emph{functions} require an explicit type annotation.
+In \texttt{visitLet}, if an annotation is present the declared type is placed in
+the environment \emph{before} the RHS is evaluated, letting the body refer back to
+the same identifier during type-checking.
+Without an annotation the binding is inserted only after the RHS, so unannotated
+recursive functions are correctly rejected.
+
+% ------------------------------------------------------------------
+\section{Stack-Allocated Mutable Variables (Challenge 2)}
+
+\paragraph{Type-checking.}
+\texttt{ASTTypeMut(A)} is an internal wrapper never visible in the concrete syntax.
+A \texttt{let mut x = e} binding wraps the inferred or declared type as
+$\mathit{mut}(A)$ before storing it in the type environment.
+\texttt{visitId} implicitly unwraps $\mathit{mut}(A)$ on reads, giving automatic
+R-value dereferencing.
+Assignments are routed through \texttt{typeOfAssignable}, which accepts
+\texttt{ASTTypeMut}, \texttt{ASTTypeRef}, and \texttt{ASTTypeAddr} as valid targets.
+
+\paragraph{Evaluation.}
+Each \texttt{let mut} binding calls \texttt{memory.push(v)}, receiving a
+\texttt{VirtualAddress} stored as a \texttt{VMutAddress} in the value environment.
+\texttt{visitId} silently reads through any \texttt{VMutAddress} via
+\texttt{memory.read}.
+The \texttt{finally} block of \texttt{visitLet} calls \texttt{memory.pop()} once
+per mutable binding, enforcing the LIFO (Last-In, First-Out).
+
+% ------------------------------------------------------------------
+\section{Explicit Aliases (Challenge 3)}
+
+\texttt{ASTTypeAddr(A)} is the programmer-visible alias type \texttt{\&(A)}.
+\texttt{visitAddr} in the type checker verifies that the target identifier is bound
+to \texttt{ASTTypeMut(A)} and returns \texttt{ASTTypeAddr(A)}.
+Scope-escape is prevented statically: a function whose return type is \texttt{\&(A)}
+but that takes the alias of an inner \texttt{let mut} variable will fail because
+the \texttt{ASTTypeMut} binding no longer exists in the type environment at the
+call site.
+Invariant subtyping on \texttt{ASTTypeAddr} closes any variance loophole.
+
+At runtime, \texttt{visitAddr} retrieves the raw \texttt{VirtualAddress} from the
+\texttt{VMutAddress} in the environment.
+Dereference and assignment handle both \texttt{VCell} (heap) and
+\texttt{VirtualAddress} (stack alias) uniformly, so the same \texttt{!} and
+\texttt{:=} operators work across all reference kinds.
+
+\end{document}

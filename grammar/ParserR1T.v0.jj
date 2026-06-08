@@ -26,6 +26,7 @@ import ast.literals.ASTId;
 import ast.literals.ASTInt;
 import ast.literals.ASTString;
 import ast.literals.ASTUnit;
+import ast.memory.ASTAddr;
 import ast.memory.ASTAssign;
 import ast.memory.ASTCell;
 import ast.memory.ASTDeref;
@@ -47,14 +48,15 @@ import ast.structs.ASTMatch;
 import ast.structs.ASTStructPattern;
 import ast.structs.ASTStructTuple;
 import ast.type.ASTType;
+import ast.type.ASTTypeAddr;
 import ast.type.ASTTypeArrow;
 import ast.type.ASTTypeBool;
 import ast.type.ASTTypeEnum;
 import ast.type.ASTTypeId;
 import ast.type.ASTTypeInt;
+import ast.type.ASTTypeMut;
 import ast.type.ASTTypeRef;
 import ast.type.ASTTypeString;
-import ast.type.ASTTypeStruct;
 import ast.type.ASTTypeUnit;
 import interpreter.environment.Bind;
 
@@ -133,6 +135,7 @@ TOKEN:
 
 	// Memory operators
 	| < DEREF:  "!" >
+	| < ADDR:   "&" >
 
 	// Delimiters & punctuation
 	| < LEFT_PAREN:       "("  >
@@ -153,7 +156,7 @@ TOKEN:
 	| < UNIT:            "()"                                                               >
 	| < TAG:             "#" ["a"-"z","A"-"Z"] ( ["a"-"z","A"-"Z","0"-"9"] )*               >
 	| < STRING_LITERAL:  "\"" ( ~["\"","\\"] | "\\" ["n","t","b","r","f","\\","\""] )* "\"" >
-	| < IDENTIFIER:      ["a"-"z","A"-"Z"] ( ["a"-"z","A"-"Z","0"-"9"] )*                   >
+	| < IDENTIFIER:      ("_" | ["a"-"z","A"-"Z"]) ( ["a"-"z","A"-"Z","0"-"9","_"] )*       >
 	| < INTEGER_LITERAL: ( ["0"-"9"] )+                                                     >
 }
 
@@ -194,8 +197,8 @@ ASTNode ParseProgram(): /* Start */
 	ParseLetOrTypeDef ::= ParseSequence
 						  |
 						  (
-						    ( "let" ( "mut" )? id ( ":" Type )? "=" ParseLogicalOr ";" )
-						    | ( "type" id "=" Type ";" )
+							( "let" ( "mut" )? id ( ":" Type )? "=" ParseLogicalOr ";" )
+							| ( "type" id "=" Type ";" )
 						  )+ ParseSequence
 */
 ASTNode ParseLetOrTypeDef(): /* Let */
@@ -378,19 +381,26 @@ ASTType PrimaryType(): /* TypeF */
 }
 {
 	(
-		  <INT>      { parsedType = ASTTypeInt.TINT; }
+		  <INT>     { parsedType = ASTTypeInt.TINT; }
 		| nameToken = <IDENTIFIER>
-					 { parsedType = new ASTTypeId(nameToken.image); }
-		| <BOOL>     { parsedType = ASTTypeBool.TBOOL; }
-		| <UNIT>     { parsedType = ASTTypeUnit.TUNIT; }
-		| <STRING>   { parsedType = new ASTTypeString(); }
+					{ parsedType = new ASTTypeId(nameToken.image); }
+		| <BOOL>    { parsedType = ASTTypeBool.TBOOL; }
+		| <UNIT>    { parsedType = ASTTypeUnit.TUNIT; }
+		| <STRING>  { parsedType = new ASTTypeString(); }
 		| <REF> <LEFT_PAREN> parsedType = Type() <RIGHT_PAREN>
-					 { parsedType = new ASTTypeRef(parsedType); }
+					{ parsedType = new ASTTypeRef(parsedType); }
 		| <CELL> <LEFT_PAREN> parsedType = Type() <RIGHT_PAREN>
-					 { parsedType = new ASTTypeRef(parsedType); }
+					{ parsedType = new ASTTypeRef(parsedType); }
 		| nameToken = <TAG> <LEFT_PAREN> typeList = TypeList() <RIGHT_PAREN>
-					 { parsedType = new ASTTypeStruct(nameToken.image, typeList); }
+					{
+						Map<String, List<ASTType>> singleVariant = new LinkedHashMap<String, List<ASTType>>();
+						singleVariant.put(nameToken.image, typeList);
+
+						parsedType = new ASTTypeEnum(singleVariant);
+					}
 		| parsedType = EnumType()
+		| <ADDR> <LEFT_PAREN> parsedType = Type() <RIGHT_PAREN>
+					{ parsedType = new ASTTypeAddr(parsedType); }
 	)
 	{ return parsedType; }
 }
@@ -575,13 +585,13 @@ ASTNode ParseFunctionLiteral(): /* Function */
 		<BAR> /* Multi-param */
 			param = <IDENTIFIER> ( <COLON> paramType = Type() )?
 			{
-				result = new ASTFun(param.image, null);
+				result = new ASTFun(param.image, paramType, null);
 				current = result;
 			}
 			(
 				<COMMA> param = <IDENTIFIER> ( <COLON> paramType = Type() )?
 				{
-					body = new ASTFun(param.image, null);
+					body = new ASTFun(param.image, paramType, null);
 					((ASTFun) current).setBodyExpr(body);
 					current = body;
 				}
@@ -594,7 +604,7 @@ ASTNode ParseFunctionLiteral(): /* Function */
 		<OR> /* No-param */
 			body = ParsePrimary()
 			{
-				result = new ASTFun("_", body);
+				result = new ASTFun("_", ASTTypeUnit.TUNIT, body);
 			}
 	)
 	{ return result; }
@@ -628,22 +638,30 @@ ASTNode ParseStructTuple(): /* StructTuple */
 	ParseMatchExpr ::=
 		"match" ParseLetOrTypeDef "{"
 			ParseStructPattern "=>" ParseLetOrTypeDef
-			"else" "=>" ParseLetOrTypeDef
+			( "|" ParseStructPattern "=>" ParseLetOrTypeDef )*
 		"}"
 */
 ASTNode ParseMatchExpr(): /* Match */
 {
-	ASTNode targetExpr, matchBranch, elseBranch;
+	ASTNode targetExpr;
+	List<ASTStructPattern> patterns = new ArrayList<ASTStructPattern>();
+	List<ASTNode>          branches = new ArrayList<ASTNode>();
 	ASTStructPattern pattern;
+	ASTNode branch;
 }
 {
 	<MATCH> targetExpr = ParseLetOrTypeDef()
 	<LEFT_BRACE>
 		pattern = ParseStructPattern()
-				<ARROW> matchBranch = ParseLetOrTypeDef()
-		<ELSE> <ARROW> elseBranch = ParseLetOrTypeDef()
+		<ARROW> branch = ParseLetOrTypeDef()
+		{ patterns.add(pattern); branches.add(branch); }
+		(
+			<BAR> pattern = ParseStructPattern()
+			<ARROW> branch = ParseLetOrTypeDef()
+			{ patterns.add(pattern); branches.add(branch); }
+		)*
 	<RIGHT_BRACE>
-	{ return new ASTMatch(targetExpr, pattern, matchBranch, elseBranch); }
+	{ return new ASTMatch(targetExpr, patterns, branches); }
 }
 
 /*
@@ -719,6 +737,8 @@ ASTNode ParsePrimary(): /* Fact */
 
 		| <CELL>  result = ParsePrimary() { result = new ASTCell(result);  }
 		| <DEREF> result = ParsePrimary() { result = new ASTDeref(result); }
+
+		| <ADDR>  result = ParsePrimary() { result = new ASTAddr(result);  }
 
 		| <LEFT_PAREN>  result = ParseLetOrTypeDef() <RIGHT_PAREN>
 		| <LEFT_BRACE>  result = ParseLetOrTypeDef() <RIGHT_BRACE>

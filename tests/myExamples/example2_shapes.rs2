@@ -1,0 +1,19 @@
+// Example 2: Shape area using enum types and pattern matching
+//
+// Expected output:
+//   75
+//   24
+//   49
+
+type Shape = enum { #circle: (int), #rect: (int, int) };
+
+let area = |s: Shape| {
+    match s {
+        #circle(r) => r * r * 3
+        | #rect(w, h) => w * h
+    }
+};
+
+println! (area(#circle(5)));
+println! (area(#rect(4, 6)));
+println! (area(#rect(7, 7)));;

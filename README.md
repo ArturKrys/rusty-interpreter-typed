@@ -4,5 +4,5 @@
 
 ```bash
 ./makeit.sh
-./r1tint
+./rs2
 ```

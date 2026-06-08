@@ -5,7 +5,7 @@ import interpreter.values.IValue;
 
 public class MemoryManager {
 
-	public static class VirtualAddress {
+	public static class VirtualAddress implements IValue {
 		private final int address;
 
 		VirtualAddress(int representation) {
@@ -14,6 +14,11 @@ public class MemoryManager {
 
 		private int get() {
 			return address;
+		}
+
+		@Override
+		public String toStr() {
+			return "addr@" + address;
 		}
 	}
 

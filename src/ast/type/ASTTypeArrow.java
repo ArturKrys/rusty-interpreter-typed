@@ -35,8 +35,8 @@ public class ASTTypeArrow implements ASTType {
 	public boolean eqt(ASTType other) {
 		if (other instanceof ASTTypeArrow) {
 			ASTTypeArrow otherArrow = (ASTTypeArrow) other;
-			return this.domain.equals(otherArrow.domain)
-					&& this.codomain.equals(otherArrow.codomain);
+			return this.domain.eqt(otherArrow.domain)
+					&& this.codomain.eqt(otherArrow.codomain);
 		}
 		return false;
 	}

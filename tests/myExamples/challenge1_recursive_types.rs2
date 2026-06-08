@@ -1,0 +1,21 @@
+// CHALLENGE 1: Recursive Type Definitions
+//
+// mylist = [1, 2, 3, 4, 5]
+// sum([1,2,3,4,5]) = 1 + 2 + 3 + 4 + 5 = 15
+//
+// Expected output:
+//   15
+
+type IntList = enum { #cons: (int, IntList), #nil: (()) };
+
+let sum: IntList -> int = |lst: IntList| {
+    match lst {
+        #cons(h, t) => h + sum(t)
+        | #nil(_)   => 0
+    }
+};
+
+let mylist =
+    #cons(1, #cons(2, #cons(3, #cons(4, #cons(5, #nil())))));
+
+println! (sum(mylist));;

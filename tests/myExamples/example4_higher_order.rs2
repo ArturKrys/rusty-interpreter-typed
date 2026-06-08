@@ -1,0 +1,15 @@
+// Example 4: Higher order functions
+//
+// apply_twice(add5,  3) = add5(add5(3)) = 3 + 5 + 5 = 13
+// apply_twice(double, 2) = double(double(2)) = (2*2)*2 = 8
+//
+// Expected output:
+//   13
+//   8
+
+let apply_twice = |f: int -> int, x: int| { f(f(x)) };
+let add5        = |n: int| { n + 5 };
+let double      = |n: int| { n * 2 };
+
+println! (apply_twice(add5,   3));
+println! (apply_twice(double, 2));;

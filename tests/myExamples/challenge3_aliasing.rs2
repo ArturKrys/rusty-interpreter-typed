@@ -1,0 +1,20 @@
+// CHALLENGE 3: Explicit Aliasing  (&x  and  &(A)  types)
+//
+//
+// Execution trace:
+//   x = 5
+//   double_inplace(&x)  →  x becomes 5 * 2 = 10
+//   increment_inplace(&x)  →  x becomes 10 + 1 = 11
+//   println! (x)  prints the mut variable x (implicitly dereferenced)
+//
+// Expected output:
+//   11
+//
+
+let double_inplace    = |p: &(int)| { p := !p * 2 };
+let increment_inplace = |p: &(int)| { p := !p + 1 };
+
+let mut x = 5;
+double_inplace(&x);
+increment_inplace(&x);
+println! (x);;
