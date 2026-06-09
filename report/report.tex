@@ -55,6 +55,7 @@ locations.
 \emph{Enums} combine width and depth subtyping in a single check: for $E_1 <: E_2$,
 every tag in $E_1$ must appear in $E_2$, and for each shared tag the field tuple of
 $E_1$ must be at least as long as $E_2$'s, with each shared prefix field a subtype:
+
 $$\frac{(\text{all } i \in 1\dots k) \ A_i = (C_1, \dots, C_{a_i}, \dots, C_{b_i}) <: B_i = (D_1, \dots, D_{a_i}) \quad C_p <: D_p \ (\text{all } p \in p\dots a_i)}{\text{enum } \{l_1 : A_1, \dots, l_k : A_k\} <: \text{enum } \{l_1 : B_1, \dots, l_k : B_k, \dots, l_n : B_n\}}$$
 
 
