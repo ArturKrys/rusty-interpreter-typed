@@ -15,7 +15,69 @@ idea to use toStr to find the variable
 
 there is more things I want to improve but I don't have time :(
 
-one day see this if this would work
+Rewrite visitAssign here is an idea
+I think it could be further improved, the name being more specific for assign to not confuse if it should
+apply to other visits
+also maybe use the same logic for `find`
+```java
+// ----------------------------------------------------
+// Memory
+// ----------------------------------------------------
+
+@Override
+public IValue visitAssign(ASTAssign node) throws InterpreterError {
+    // 1. Evaluate where to store the value (L-value)
+    IValue targetLocation = evaluateLValue(node.getTarget());
+
+    // 2. Evaluate what to store (R-value)
+    IValue newValue = node.getValue().accept(this);
+
+    // 3. Perform the memory write
+    return writeToLocation(targetLocation, newValue);
+}
+
+/**
+ * Resolves an ASTNode to its underlying memory reference rather than its evaluated value.
+ */
+private IValue evaluateLValue(ASTNode target) throws InterpreterError {
+    if (target instanceof ASTId) {
+        // ASTId requires raw lookup to prevent implicit dereferencing found in visitId()
+        ASTId targetId = (ASTId) target;
+        return lookupRawIdentifier(targetId.getId());
+    }
+
+    // Complex targets (like dereferences or structural access) are evaluated normally
+    return target.accept(this);
+}
+
+/**
+ * Handles the actual memory writing logic across different reference types.
+ */
+private IValue writeToLocation(IValue location, IValue newValue) throws InterpreterError {
+    try {
+        if (location instanceof VMutAddress) {
+            this.memory.write(((VMutAddress) location).getAddress(), newValue);
+            return newValue;
+        }
+
+        if (location instanceof MemoryManager.VirtualAddress) {
+            this.memory.write((MemoryManager.VirtualAddress) location, newValue);
+            return newValue;
+        }
+
+        if (location instanceof VCell) {
+            this.store.set(((VCell) location).getLocation(), newValue);
+            return newValue;
+        }
+    } catch (MemoryPanicException e) {
+        throw new InterpreterError("assign: " + e.getMessage());
+    }
+
+    throw new InterpreterError("assign: assignable target expected, found: " + location);
+}
+```
+
+One day see this if this would work
 ```jj
 ASTNode ParseLetOrTypeDef(): /* Let */
 {
